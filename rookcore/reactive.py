@@ -158,7 +158,7 @@ class Observer(_BaseRef):
     def __init__(self, ref, callback=lambda: None):
         super().__init__()
         self._callback = callback
-        self._depends = [ref]
+        self._depends = {ref}
         self._enable()
         self._value = None
 
