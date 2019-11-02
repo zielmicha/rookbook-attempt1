@@ -3,14 +3,27 @@
 <head>
   <meta charset="utf-8">
 </head>
-<body onload="brython({debug: 1, indexedDB: false})">
+<body>
+  <script>
+    console.log("loading...")
+  </script>
   <div id=loading style="text-align: center; margin-top: 2em; font-size: 2em">
     loading...
   </div>
-  <script src="/brython.js"></script>
-  <script src="/brython_stdlib.js"></script>
-  <script type="text/python">
-    import brython_client
-    brython_client.start('/websocket')
+  <script src="/pyodide_dev.js"></script>
+  <script>
+    var clientCode;
+    var clientCodeReady = fetch("/user-code.zip").then((body) => {
+       return body.arrayBuffer();
+    }).then((data) => { clientCode = data });
+
+    Promise.all([languagePluginLoader, clientCode]).then(() => {
+       pyodide.runPython("import os, sys; sys.path.append('/user-code.zip')");
+       let file = pyodide.globals.open('/user-code.zip', 'wb');
+       file.write(clientCode);
+       file.close();
+       pyodide.runPython("import main");
+       document.getElementById("loading").style.display = 'none';
+    });
   </script>
 </body>

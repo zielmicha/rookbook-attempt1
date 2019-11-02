@@ -1,5 +1,4 @@
+from rookcore import record
 
 def client_run():
-    import rookcore.record
-
     print('XXX')

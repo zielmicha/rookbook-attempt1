@@ -1,22 +1,18 @@
-import sys, browser, browser.websocket, json
+import sys, json
 
 websocket = None
 on_message_callback = lambda data: None
 on_close_callback = lambda: None
-
-def add_module(modname, data, is_pkg):
-    browser.window.__BRYTHON__.VFS[modname] = ['.py', data, None, is_pkg]
 
 def on_close(ev):
     on_close_callback()
 
 def on_message(ev):
     data = ev.data
-    if data[0] == 'M':
-        print(repr(data))
-        is_pkg = data[1] == 'P'
-        mod_name, data = data[2:].split('\n', 1)
-        add_module(mod_name, data, is_pkg)
+    if data[0] == 'F':
+        filename, data = data.split('\n', 1)
+        with open(filename, 'w') as f:
+            f.write(data)
     elif data[0] == 'E':
         code = data[1:]
         exec(code)
