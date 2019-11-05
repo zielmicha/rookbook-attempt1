@@ -26,4 +26,5 @@ else:
         return js.document.createTextNode(s)
 
     def setAttribute(e, k, v):
-        setattr(e, k, v)
+        # setattr(e, k, v)
+        e.setAttribute(k, v)

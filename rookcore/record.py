@@ -76,7 +76,7 @@ def record(name, fields):
     exec('def __hash__(self):\n  return hash((%s, ))' % (
         ', '.join( field.name for field in fields)), dict)
 
-    exec('def __eq__(self, other):\n  return type(self) == type(other) and %s' % (
+    exec('def __eq__(self, other):\n  return self is other or (type(self) == type(other) and %s)' % (
         ' and '.join( f'self.{field.name} == other.{field.name}' for field in fields )), dict)
 
     exec('def __repr__(self):\n  return "%s(%s)" %% (%s)' % (
