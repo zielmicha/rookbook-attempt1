@@ -77,6 +77,3 @@ class Handler:
 
         z.close()
         return out.getvalue()
-
-    def exec_in_browser(self, code):
-        return self.websocket.send('E' + code)
