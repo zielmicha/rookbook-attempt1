@@ -1,6 +1,6 @@
 from rookcore import record, reactive
 from rookwidget.core import h, widget, Widget, mount_widget
-import js
+import js # type: ignore
 
 class TextBox(Widget):
     def init(self, placeholder):

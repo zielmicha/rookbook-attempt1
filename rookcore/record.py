@@ -3,7 +3,7 @@ from .common import *
 import operator
 import collections
 
-__all__ = ['record', 'field']
+__all__ = ['make_record', 'field', 'make_union']
 
 class _Field(NamedTuple):
     name: str
@@ -59,7 +59,7 @@ class BaseRecord:
 
         return msg
 
-def record(name, fields):
+def make_record(name, fields):
     fields = tuple(sorted(fields, key=lambda f: f.id))
 
     dict: Dict[str, Any] = {}
@@ -89,7 +89,7 @@ def record(name, fields):
 
     return type(name, (BaseRecord,), dict)
 
-def field(name, type, id, default=MISSING):
+def field(name: str, type: Any, id: int, default=MISSING):
     return _Field(name=name, type=type, id=id, default=default)
 
 class _Union(NamedTuple):
@@ -108,7 +108,7 @@ class _Union(NamedTuple):
 
         raise Exception('unknown Union member')
 
-def union(types):
+def make_union(types):
     by_id: Dict[int, Any] = {}
     by_type: Dict[Any, int] = {}
 

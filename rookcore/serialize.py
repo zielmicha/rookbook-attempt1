@@ -45,6 +45,32 @@ def unserialize_str(value, serializer):
     expect_packed(value)
     return bytes(value).decode('utf8')
 
+class AnyPayload:
+    pass
+
+class _BinaryPayload(AnyPayload):
+    def __init__(self, serializer, data):
+        self.serializer = serializer
+        self.data = data
+
+class TypedPayload(AnyPayload):
+    def __init__(self, type_, value):
+        self.type_ = type_
+        self.value = value
+
+@register_serializer(AnyPayload)
+def serialize_any_payload(value, serializer):
+    if isinstance(value, _BinaryPayload):
+        return value.data
+    elif isinstance(value, TypedPayload):
+        serializer.serialize(value.type_, value.value)
+    else:
+        raise TypeError(type(value))
+
+@register_unserializer(AnyPayload)
+def unserialize_any_payload(value, serializer):
+    return _BinaryPayload(serializer=serializer, data=value)
+
 class Serializer:
     def serialize(self, type_, value):
         assert type(type_) == type

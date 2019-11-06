@@ -1,5 +1,5 @@
 try:
-    import js
+    import js # type: ignore
 except ImportError:
     def createElement(name):
         return Element(name)

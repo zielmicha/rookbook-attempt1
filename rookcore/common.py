@@ -29,7 +29,7 @@ def lazy(f: Callable):
     return Lazy(f=f)
 
 def dict_multi(pairs):
-    result: Dict = {}
+    result: dict = {}
     for k, v in pairs:
         if k not in result:
             result[k] = []

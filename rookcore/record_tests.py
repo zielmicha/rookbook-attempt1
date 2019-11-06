@@ -4,7 +4,7 @@ from .common import *
 from .record import *
 from . import serialize
 
-StringList = record('StringList', [
+StringList = make_record('StringList', [
     field('head', str, id=1),
     field('tail', lazy(lambda: StringList), id=2, default=None)]) # type: ignore
 
