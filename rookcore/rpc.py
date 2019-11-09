@@ -1,72 +1,71 @@
 from typing import *
 from .record import *
 from . import serialize
-import weakref, dataclasses
+import inspect, abc
 
-CallRequest = make_record('CallRequest', [
-    field('id', int, id=1),
-    field('obj_id', int, id=2),
-    field('method_id', int, id=3),
-    field('args', serialize.AnyPayload, id=4),
-])
+__all__ = ['RpcIface', 'RpcMeta', 'rpcmethod']
 
-CallResponse = make_record('CallResponse', {
-    field('id', int, id=1),
-    field('value', serialize.AnyPayload, id=2),
-})
+class RpcIface:
+    pass
 
-FinalizeResponse = make_record('FinalizeResponse', {
-    field('id', int, id=1),
-})
+class _RpcObj(RpcIface):
+    def rpc_call(self, method_id, params: serialize.AnyPayload):
+        method = self._rpc_method_by_id[method_id] # type: ignore
+        params_obj = params.unserialize(method.param_type)
+        return_obj = getattr(self, method.name)(**params_obj._to_dict())
 
-AdjustRefCount = make_record('AdjustRefCount', {
-    field('obj_id', int, id=1),
-    field('delta', int, id=2),
-})
+        return serialize.TypedPayload(value=return_obj, type_=method.return_type)
 
-RpcMessage = make_union({
-    1: CallRequest,
-    2: CallResponse,
-    3: FinalizeResponse,
-    4: AdjustRefCount,
-})
+class RpcMeta(type): # inherit from type to make Mypy happy
+    def __new__(self, name, bases, namespace):
+        abc_namespace: dict = {}
 
-class RpcSession:
-    def __init__(self, on_message):
-        self._on_message = on_message
-        self._own_objects = {}
-        self._remote_proxies: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
-        self._next_call_id = 1
+        by_id: dict = {}
 
-    def _send(self, msg):
-        self._on_message(_RpcSerializer(self).serialize(RpcMessage, msg))
+        for name, v in namespace:
+            assert isinstance(v, _TmpRpcMethod), "%s is not annotated with @rpcmethod" % name
+            abc_namespace[name] = abc.abstractmethod(v.method)
 
-    def message_received(self, data):
-        pass
+            if v.id not in by_id:
+                raise ValueError('method id collision (%s vs %s)' % (by_id[v.id], v))
 
-    def call(self, obj_id: int, method_id: int, args: serialize.AnyPayload):
-        call_id = self._next_call_id
-        self._next_call_id += 1
+            by_id[v.id] = _RpcMethod(name=name, param_type=v.param_type, return_type=v.return_type)
 
-        req = CallRequest(id=call_id, obj_id=obj_id, method_id=method_id, args=args)
-        self._send(req)
+        abc_namespace['_rpc_method_by_id'] = by_id
 
-@dataclasses.dataclass
-class _OwnObject:
-    ref_count: int
-    obj: Any
+        return abc.ABCMeta(name, bases + (_RpcObj,), abc_namespace)
 
-class _RemoteObjectProxy:
-    def __init__(self, session, obj_id):
-        self._session = session
-        self._obj_id = obj_id
+class _RpcMethod(NamedTuple):
+    name: str
+    param_type: Any
+    return_type: Any
 
-class _RpcSerializer(serialize.Serializer):
-    def __init__(self, session):
-        self.session = session
+class _TmpRpcMethod(NamedTuple):
+    id: int
+    param_type: Any
+    return_type: Any
+    method: Any
 
-    def serialize(self, type_, value):
-        pass
+def rpcmethod(id: int):
+    def wrapper(method):
+        sig = inspect.signature(method)
 
-    def unserialize(self, type_, value):
-        pass
+        assert sig.return_annotation != inspect._empty # type: ignore
+
+        param_fields = []
+
+        for i, (name, param) in enumerate(sig.parameters.items()):
+            assert param.annotation != inspect._empty # type: ignore
+
+            param_fields.append(field(
+                name,
+                id=i,
+                type=param.annotation,
+                default=param.default
+            ))
+
+        param_type = make_record('_Params', param_fields)
+
+        return _TmpRpcMethod(id=id, param_type=param_type, return_type=sig.return_annotation, method=method)
+
+    return wrapper

@@ -59,6 +59,9 @@ class BaseRecord:
 
         return msg
 
+    def _to_dict(self):
+        return { field.name:getattr(self, field.name) for field in self._fields } # type: ignore
+
 def make_record(name, fields):
     fields = tuple(sorted(fields, key=lambda f: f.id))
 
@@ -69,9 +72,15 @@ def make_record(name, fields):
 
     dict['_fields'] = fields
 
+    for field in fields:
+        if isinstance(field.type, Lazy):
+            dict[f'_T{field.name}'] = staticmethod(field.type.get)
+        else:
+            dict[f'_T{field.name}'] = (lambda t: staticmethod(lambda: t))(field.type)
+
     exec('def __init__(self, *, %s):\n  %s' % (
         ', '.join( field.name for field in fields),
-        '\n  '.join( f'self._F{field.name} = {field.name}' for field in fields)), dict)
+        '\n  '.join( f'if {field.name} is not None and not isinstance({field.name}, self._T{field.name}()): raise TypeError("field {field.name} should have type {field.type}, not %s" % type({field.name}))\n  self._F{field.name} = {field.name}' for field in fields)), dict)
 
     exec('def __hash__(self):\n  return hash((%s, ))' % (
         ', '.join( field.name for field in fields)), dict)
@@ -92,9 +101,15 @@ def make_record(name, fields):
 def field(name: str, type: Any, id: int, default=MISSING):
     return _Field(name=name, type=type, id=id, default=default)
 
-class _Union(NamedTuple):
+class _Union(type):
     by_id: Dict[int, Any]
     by_type: Dict[Any, int]
+
+    def __subclasshook__(self, t):
+        return t in self.by_type
+
+    def __instancecheck__(self, t):
+        return type(t) in self.by_type
 
     def _to_message(self, value, serializer):
         type_ = type(value)
@@ -112,7 +127,7 @@ def make_union(types):
     by_id: Dict[int, Any] = {}
     by_type: Dict[Any, int] = {}
 
-    for id, type_ in types:
+    for id, type_ in types.items():
         assert type(id) == int
         if id in by_id:
             raise Exception('duplicate id %d' % id)
@@ -122,4 +137,4 @@ def make_union(types):
             raise Exception('duplicate type %s' % type_)
         by_type[type_] = id
 
-    return _Union(by_id, by_type)
+    return _Union('Union', (), dict(by_id=by_id, by_type=by_type))

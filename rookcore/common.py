@@ -1,4 +1,5 @@
 from typing import *
+from dataclasses import dataclass
 
 class Lazy:
     def __init__(self, f):
@@ -88,3 +89,45 @@ class frozendict(dict):
         return hash(tuple(self.items()))
 
     # TODO: other APIs
+
+class _Bijection_dict:
+    def __init__(self, a, b):
+        self._a = a
+        self._b = b
+
+    def __setitem__(self, k, v):
+        if k in self._a:
+            v = self._a[k]
+            del self._b[v]
+
+        if v in self._b:
+            raise KeyError('value %s is already set')
+
+        self._a[k] = v
+        self._b[v] = k
+
+    def __getitem__(self, k):
+        return self._a[k]
+
+    def __contains__(self, k):
+        return k in self._a
+
+class Bijection:
+    def __init__(self):
+        self._a: dict = {}
+        self._b: dict = {}
+        self.by_key = _Bijection_dict(self._a, self._b)
+        self.by_value = _Bijection_dict(self._b, self._a)
+
+    def add(self, k, v):
+        if k in self._a:
+            raise KeyError('%r is duplicate' % k)
+
+        if v in self._b:
+            raise KeyError('%r is duplicate' % v)
+
+        self._a[k] = v
+        self._b[v] = k
+
+    def __iter__(self):
+        return iter(self._a.items())

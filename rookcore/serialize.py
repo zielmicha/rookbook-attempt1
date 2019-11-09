@@ -20,7 +20,7 @@ def expect_packed(value):
 
 @register_serializer(int)
 def serialize_int(value, serializer):
-    return serialize_io.write_uint(serialize_io.int_to_uint(value))
+    return serialize_io.int_to_uint(value)
 
 @register_unserializer(int)
 def unserialize_int(value, unserializer):
@@ -46,17 +46,26 @@ def unserialize_str(value, serializer):
     return bytes(value).decode('utf8')
 
 class AnyPayload:
-    pass
+    def unserialize(self, type_): assert False
 
 class _BinaryPayload(AnyPayload):
     def __init__(self, serializer, data):
         self.serializer = serializer
         self.data = data
 
+    def unserialize(self, type_):
+        return self.serializer.unserialize(type_, self.data)
+
 class TypedPayload(AnyPayload):
     def __init__(self, type_, value):
         self.type_ = type_
         self.value = value
+
+    def unserialize(self, type_):
+        if type_ != self.type_:
+            raise TypeError('cannot unserialize %s as %s' % (self.type_, type_))
+
+        return self.value
 
 @register_serializer(AnyPayload)
 def serialize_any_payload(value, serializer):
@@ -73,13 +82,11 @@ def unserialize_any_payload(value, serializer):
 
 class Serializer:
     def serialize(self, type_, value):
-        assert type(type_) == type
-
         if type_ in SERIALIZERS:
             return SERIALIZERS[type_](value, self)
 
         if hasattr(type_, "_to_message"):
-            message = type_._to_message(value, self)
+            message = type_._to_message(value, self) # type: ignore
             return serialize_io.write_message(message)
 
         raise Exception('cannot serialize %s' % type(value))
@@ -92,7 +99,7 @@ class Serializer:
             return x.getvalue()
 
     def unserialize(self, type_, value):
-        assert isinstance(value, memoryview)
+        assert isinstance(value, (memoryview, int))
 
         if type_ in UNSERIALIZERS:
             return UNSERIALIZERS[type_](value, self)
