@@ -27,11 +27,11 @@ class BaseRecord:
             origin_type = getattr(type_, '__origin__', None)
             if origin_type == List:
                 subtype, = type_.__args__
-                result[field.name] = [ serializer.unserialize(v, subtype) for v in values ]
+                result[field.name] = [ serializer.unserialize(value=v, type_=subtype) for v in values ]
             else:
                 if len(values) == 0:
                     if field.default == MISSING:
-                        raise Exception('missing value for field %r' % field)
+                        raise Exception('missing value for field %r' % (field, ))
                     else:
                         result[field.name] = field.default
                 else:
@@ -62,6 +62,30 @@ class BaseRecord:
     def _to_dict(self):
         return { field.name:getattr(self, field.name) for field in self._fields } # type: ignore
 
+def _get_type(t):
+    origin = getattr(t, '__origin__', None)
+    if origin is not None:
+        return origin
+    else:
+        return t
+
+def isinstance_plus(value, type_):
+    if isinstance(type_, Lazy):
+        return isinstance_plus(value, type_.get())
+
+    origin = getattr(type_, '__origin__', None)
+
+    if origin == List:
+        if not isinstance(value, list): return False
+
+        for item in value:
+            if not isinstance_plus(item, type_.__args__[0]):
+                return False
+
+        return True
+
+    return isinstance(value, type_)
+
 def make_record(name, fields):
     fields = tuple(sorted(fields, key=lambda f: f.id))
 
@@ -73,14 +97,15 @@ def make_record(name, fields):
     dict['_fields'] = fields
 
     for field in fields:
-        if isinstance(field.type, Lazy):
-            dict[f'_T{field.name}'] = staticmethod(field.type.get)
-        else:
-            dict[f'_T{field.name}'] = (lambda t: staticmethod(lambda: t))(field.type)
+        dict[f'_T{field.name}'] = (lambda t: staticmethod(lambda value: value is None or isinstance_plus(value, t)))(field.type)
+
+    for field in fields:
+        dict[f'_default_{field.name}'] = field.default
 
     exec('def __init__(self, *, %s):\n  %s' % (
-        ', '.join( field.name for field in fields),
-        '\n  '.join( f'if {field.name} is not None and not isinstance({field.name}, self._T{field.name}()): raise TypeError("field {field.name} should have type {field.type}, not %s" % type({field.name}))\n  self._F{field.name} = {field.name}' for field in fields)), dict)
+        ', '.join( f'{field.name}=_default_{field.name}' if field.default is not MISSING else field.name
+                   for field in fields),
+        '\n  '.join( f'if not self._T{field.name}({field.name}): raise TypeError("field {field.name} should have type {field.type}, but has value %r" % {field.name})\n  self._F{field.name} = {field.name}' for field in fields)), dict)
 
     exec('def __hash__(self):\n  return hash((%s, ))' % (
         ', '.join( field.name for field in fields)), dict)
@@ -111,7 +136,11 @@ class _Union(type):
     def __instancecheck__(self, t):
         return type(t) in self.by_type
 
+    def __str__(self):
+        return '<union %s>' % ('|'.join(map(str, self.by_id.values())))
+
     def _to_message(self, value, serializer):
+        assert isinstance(value, self), '%s is not %s' % (value, self)
         type_ = type(value)
         id = self.by_type[type_]
         return [(id, serializer.serialize(type_, value))]
@@ -119,7 +148,7 @@ class _Union(type):
     def _from_message(self, msg, serialize):
         for id, value in msg:
             if id in self.by_id:
-                return serialize.unserialize(self.by_id[id], value)
+                return serialize.unserialize(type_=self.by_id[id], value=value)
 
         raise Exception('unknown Union member')
 

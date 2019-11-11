@@ -13,6 +13,10 @@ StringOrInt = make_union({
     2: str
 })
 
+ListWrapper = make_record('ListWrapper', [
+    field('lst', List[bytes], id=1)
+])
+
 class SerializeTest(unittest.TestCase):
     def test_roundtrips(self):
         self.roundtrip('fooą')
@@ -21,12 +25,15 @@ class SerializeTest(unittest.TestCase):
 
         curr = None
         for i in range(10):
-            curr = StringList(head='%d' % i, tail=curr)
-            self.roundtrip(curr)
+           curr = StringList(head='%d' % i, tail=curr)
+           self.roundtrip(curr)
 
         self.roundtrip('foo', StringOrInt)
         self.roundtrip(5, StringOrInt)
         assert isinstance(5, StringOrInt)
+        assert not isinstance(5.0, StringOrInt)
+
+        self.roundtrip(ListWrapper(lst=[b"1", b"", b"foo"]))
 
     def roundtrip(self, x, t=None):
         t = type(x) if t is None else t

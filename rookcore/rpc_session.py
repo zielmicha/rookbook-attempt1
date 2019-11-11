@@ -2,7 +2,7 @@ from typing import *
 from .record import *
 from .common import Bijection
 from . import serialize, rpc
-import weakref, dataclasses
+import weakref, dataclasses, functools, asyncio, traceback, sys
 
 CallRequest = make_record('CallRequest', [
     field('id', int, id=1),
@@ -13,7 +13,8 @@ CallRequest = make_record('CallRequest', [
 
 CallResponse = make_record('CallResponse', {
     field('id', int, id=1),
-    field('value', serialize.AnyPayload, id=2),
+    field('is_error', bool, default=False, id=2),
+    field('value', serialize.AnyPayload, id=3),
 })
 
 FinalizeResponse = make_record('FinalizeResponse', {
@@ -38,25 +39,73 @@ SerializedObject = make_record('SerializedObject', {
 })
 
 class RpcSession:
-    def __init__(self, on_message):
+    def __init__(self, root_object, on_message):
         self._on_message = on_message
-        self._own_objects_by_obj = {}
-        self._own_objects_by_id = {}
-        self._next_own_object_id = 1
+        self._own_objects_by_obj: dict = {}
+        self._own_objects_by_id: dict = {}
+        self._next_own_object_id = 2
         self._remote_proxies: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
         self._next_call_id = 1
         self._call_states = {}
+        self._response_states = {}
+
+        o = _OwnObject(id=1, ref_count=1, obj=root_object)
+        self._own_objects_by_obj[root_object] = o
+        self._own_objects_by_id[1] = o
 
     def message_received(self, data):
         msg = _RpcSerializer(self).unserialize(RpcMessage, data)
         if isinstance(msg, CallRequest):
-            pass
+            obj = self._own_objects_by_id[msg.obj_id]
+
+            self._run_call(obj, msg.method_id, msg.params, functools.partial(self._send_call_response, msg.id))
         elif isinstance(msg, CallResponse):
-            pass
+            call_state = self._call_states[msg.id]
+
+            for own_object in call_state.ref_count_incremented: self._decref(own_object)
+            call_state.callback(msg.is_error, msg.value)
+
+            finalize_msg = FinalizeResponse(id=msg.id)
+            self._on_message(serialize.Serializer().serialize_to_memoryview(RpcMessage, finalize_msg))
         elif isinstance(msg, FinalizeResponse):
-            pass
+            for own_object in self._response_states[msg.id]:
+                self._decref(own_object)
         elif isinstance(msg, AdjustRefCount):
-            pass
+            own_object = self._own_objects_by_id[msg.id]
+
+            if msg.delta == 1:
+                own_object.ref_count += 1
+            elif msg.delta == -1:
+                self._decref(own_object)
+            else:
+                raise Exception('invalid delta')
+
+    def _run_call(self, obj, method_id, params, callback):
+        asyncio.ensure_future(obj.obj.rpc_call(method_id, params)).add_done_callback(_print_errors(callback))
+        #r = obj.obj.rpc_call(method_id, params)
+        #callback('foo')
+
+    def _send_call_response(self, call_id, result):
+        exc = result.exception()
+        if exc is None:
+            assert isinstance(result.result(), serialize.AnyPayload)
+            response = CallResponse(id=call_id, value=result.result())
+        else:
+            sys.stderr.write('Error in RPC call:\n')
+            result.print_stack()
+            response = CallResponse(id=call_id, is_error=True,
+                                    value=serialize.TypedPayload(type_=str, value='%s: %s' % (type(exc).__name__, exc)))
+
+        serializer = _RpcSerializer(self)
+        serialized = serializer.serialize_to_memoryview(RpcMessage, response)
+        self._response_states[call_id] = serializer.ref_count_incremented
+        self._on_message(serialized)
+
+    def _decref(self, own_object):
+        own_object.ref_count -= 1
+        if own_object.ref_count == 0:
+            del self._own_objects_by_id[own_object.id]
+            del self._own_objects_by_obj[own_object.obj]
 
     def call_with_cb(self, obj_id: int, method_id: int, params: serialize.AnyPayload, callback):
         call_id = self._next_call_id
@@ -65,19 +114,20 @@ class RpcSession:
         req = CallRequest(id=call_id, obj_id=obj_id, method_id=method_id, params=params)
 
         serializer = _RpcSerializer(self)
-        serialized = serializer.serialize(RpcMessage, req)
+        serialized = serializer.serialize_to_memoryview(RpcMessage, req)
         self._call_states[call_id] = _CallState(callback=callback, ref_count_incremented=serializer.ref_count_incremented)
         self._on_message(serialized)
+
+@dataclasses.dataclass
+class _OwnObject:
+    id: int
+    ref_count: int
+    obj: Any
 
 @dataclasses.dataclass
 class _CallState:
     ref_count_incremented: List[_OwnObject]
     callback: Callable
-
-@dataclasses.dataclass
-class _OwnObject:
-    ref_count: int
-    obj: Any
 
 class _RemoteObjectProxy(rpc.RpcIface):
     def __init__(self, session, obj_id):
@@ -115,7 +165,7 @@ class _RpcSerializer(serialize.Serializer):
 
         id = self.session._next_own_object_id
         self.session._next_own_object_id += 1
-        own_object = _OwnObject(obj=obj, ref_count=1)
+        own_object = _OwnObject(obj=obj, ref_count=1, id=id)
         self.ref_count_incremented.append(own_object)
         self.session._own_objects_by_obj[obj] = own_object
         self.session._own_objects_by_id[id] = own_object
@@ -123,4 +173,14 @@ class _RpcSerializer(serialize.Serializer):
         return SerializedObject(own_id=id)
 
     def unserialize(self, type_, value):
-        return super().serialize(type_, value)
+        return super().unserialize(type_=type_, value=value)
+
+def _print_errors(f):
+    def wrapper(*args, **kwargs):
+        try:
+            f(*args, **kwargs)
+        except Exception:
+            traceback.print_exc()
+            raise
+
+    return wrapper

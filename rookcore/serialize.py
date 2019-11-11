@@ -27,6 +27,15 @@ def unserialize_int(value, unserializer):
     expect_varint(value)
     return serialize_io.uint_to_int(value)
 
+@register_serializer(bool)
+def serialize_bool(value, serializer):
+    return 1 if value else 0
+
+@register_unserializer(bool)
+def unserialize_bool(value, unserializer):
+    expect_varint(value)
+    return value != 0
+
 @register_serializer(bytes)
 def serialize_bytes(value, serializer):
     return value
@@ -72,7 +81,7 @@ def serialize_any_payload(value, serializer):
     if isinstance(value, _BinaryPayload):
         return value.data
     elif isinstance(value, TypedPayload):
-        serializer.serialize(value.type_, value.value)
+        return serializer.serialize(value.type_, value.value)
     else:
         raise TypeError(type(value))
 
@@ -96,10 +105,10 @@ class Serializer:
         if isinstance(x, bytes):
             return memoryview(x)
         else:
-            return x.getvalue()
+            return memoryview(x.getvalue())
 
     def unserialize(self, type_, value):
-        assert isinstance(value, (memoryview, int))
+        assert isinstance(value, (memoryview, int)), value
 
         if type_ in UNSERIALIZERS:
             return UNSERIALIZERS[type_](value, self)

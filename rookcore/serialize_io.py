@@ -103,7 +103,7 @@ def write_message(items):
         elif isinstance(v, (bytes, OutputBuffer)):
             type_tag = 2
         else:
-            raise Exception('invalid value')
+            raise Exception('invalid value %r' % v)
 
         out.write(write_uint((k << 3) | type_tag))
         write(out, v)
