@@ -40,11 +40,12 @@ SerializedObject = make_record('SerializedObject', {
 
 class RpcSession:
     def __init__(self, root_object, on_message):
+        self.event_loop = asyncio.get_event_loop()
         self._on_message = on_message
         self._own_objects_by_obj: dict = {}
         self._own_objects_by_id: dict = {}
         self._next_own_object_id = 2
-        self._remote_proxies: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+        self._remote_objects: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
         self._next_call_id = 1
         self._call_states = {}
         self._response_states = {}
@@ -52,6 +53,25 @@ class RpcSession:
         o = _OwnObject(id=1, ref_count=1, obj=root_object)
         self._own_objects_by_obj[root_object] = o
         self._own_objects_by_id[1] = o
+
+        self.remote_root_object = _RemoteObject(session=self, obj_id=1)
+        self._remote_objects[1] = self.remote_root_object
+
+    def _get_remote_obj(self, id):
+        remote_obj = self._remote_objects.get(id, None)
+        if remote_obj is None:
+            remote_obj = _RemoteObject(self, id)
+            self._remote_objects[id] = remote_obj
+            self._send_adjust_ref(id, delta=1)
+
+        return remote_obj
+
+    def _del_remote_obj(self, id):
+        self._send_adjust_ref(id, -1)
+
+    def _send_adjust_ref(self, id, delta):
+        msg = AdjustRefCount(obj_id=id, delta=delta)
+        self._on_message(serialize.Serializer().serialize_to_memoryview(RpcMessage, msg))
 
     def message_received(self, data):
         msg = _RpcSerializer(self).unserialize(RpcMessage, data)
@@ -71,7 +91,7 @@ class RpcSession:
             for own_object in self._response_states[msg.id]:
                 self._decref(own_object)
         elif isinstance(msg, AdjustRefCount):
-            own_object = self._own_objects_by_id[msg.id]
+            own_object = self._own_objects_by_id[msg.obj_id]
 
             if msg.delta == 1:
                 own_object.ref_count += 1
@@ -82,8 +102,6 @@ class RpcSession:
 
     def _run_call(self, obj, method_id, params, callback):
         asyncio.ensure_future(obj.obj.rpc_call(method_id, params)).add_done_callback(_print_errors(callback))
-        #r = obj.obj.rpc_call(method_id, params)
-        #callback('foo')
 
     def _send_call_response(self, call_id, result):
         exc = result.exception()
@@ -118,6 +136,19 @@ class RpcSession:
         self._call_states[call_id] = _CallState(callback=callback, ref_count_incremented=serializer.ref_count_incremented)
         self._on_message(serialized)
 
+    def call(self, obj_id, method_id, params, return_type):
+        f: asyncio.Future = asyncio.Future()
+
+        def cb(is_error, value):
+            if is_error:
+                f.set_exception(rpc.RemoteError(value.unserialize(str)))
+            else:
+                f.set_result(value.unserialize(return_type))
+
+        self.call_with_cb(obj_id, method_id, params, cb)
+
+        return f
+
 @dataclasses.dataclass
 class _OwnObject:
     id: int
@@ -129,13 +160,23 @@ class _CallState:
     ref_count_incremented: List[_OwnObject]
     callback: Callable
 
-class _RemoteObjectProxy(rpc.RpcIface):
+class _RemoteObject(rpc.RpcIface):
     def __init__(self, session, obj_id):
         self._session = session
         self._obj_id = obj_id
 
-    def rpc_call(self, method_id, params):
-        self._session.call(self._obj_id, method_id, params)
+    def rpc_call(self, method_id, params, return_type):
+        return self._session.call(self._obj_id, method_id, params, return_type)
+
+    def as_proxy(self, iface):
+        assert issubclass(iface, rpc.RpcIface)
+        remote_proxy = iface.RemoteProxy()
+        remote_proxy.rpc_call = self.rpc_call
+        remote_proxy._rpc_remote_object = self
+        return remote_proxy
+
+    def __del__(self):
+        self._session.event_loop.call_soon_threadsafe(functools.partial(self._session._del_remote_obj, self._obj_id))
 
 class _RpcSerializer(serialize.Serializer):
     def __init__(self, session):
@@ -144,13 +185,28 @@ class _RpcSerializer(serialize.Serializer):
 
     def serialize(self, type_, value):
         if issubclass(type_, rpc.RpcIface):
-            serialized_obj = self.session.serialize_obj(value)
+            serialized_obj = self._serialize_obj(value)
             return super().serialize(SerializedObject, serialized_obj)
         else:
             return super().serialize(type_, value)
 
+    def _unserialize_obj(self, type_, obj):
+        if obj.own_id is not None:
+            # remote object
+            return self.session._get_remote_obj(obj.own_id).as_proxy(type_)
+        elif obj.remote_id is not None:
+            own_object = self.session._own_objects_by_id[obj.remote_id]
+
+            assert isinstance(own_object.obj, type_)
+            return own_object.obj
+        else:
+            raise ValueError('invalid object reference')
+
     def _serialize_obj(self, obj):
-        if isinstance(obj, _RemoteObjectProxy):
+        if hasattr(obj, "_rpc_remote_object"):
+            obj = obj._rpc_remote_object
+
+        if isinstance(obj, _RemoteObject):
             if obj._session != self.session:
                 # we trivially could, by proxying the requests
                 raise Exception('cannot serilize third party remote objects')
@@ -173,7 +229,11 @@ class _RpcSerializer(serialize.Serializer):
         return SerializedObject(own_id=id)
 
     def unserialize(self, type_, value):
-        return super().unserialize(type_=type_, value=value)
+        if issubclass(type_, rpc.RpcIface):
+            obj = super().unserialize(SerializedObject, value)
+            return self._unserialize_obj(type_, obj)
+        else:
+            return super().unserialize(type_=type_, value=value)
 
 def _print_errors(f):
     def wrapper(*args, **kwargs):

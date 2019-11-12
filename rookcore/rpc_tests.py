@@ -10,7 +10,16 @@ class HelloIface(metaclass=rpc.RpcMeta):
 
 class HelloImpl(HelloIface):
     async def welcome(self, who):
+        if who == "": raise ValueError("missing name")
         return 'Hello ' + who
+
+class ComplexIface(metaclass=rpc.RpcMeta):
+    @rpc.rpcmethod(id=1)
+    def get_greeter(self) -> HelloIface: pass
+
+class ComplexImpl(ComplexIface):
+    async def get_greeter(self):
+        return HelloImpl()
 
 class RpcTest(unittest.TestCase):
     def test_simple(self):
@@ -32,7 +41,49 @@ class RpcTest(unittest.TestCase):
         param_type = HelloIface._rpc_method_by_id[66].param_type # type: ignore
         session1.call_with_cb(1, 66, serialize.TypedPayload(type_=param_type, value=param_type(who="zielmicha")), cb)
 
-        asyncio.get_event_loop().run_until_complete(finished)
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(finished, 5))
+
+    def test_proxy(self):
+        session2: rpc_session.RpcSession
+        root1 = None
+        root2 = HelloImpl()
+        session1 = rpc_session.RpcSession(root_object=root1,
+                                          on_message=lambda data: session2.message_received(data))
+        session2 = rpc_session.RpcSession(root_object=root2,
+                                          on_message=lambda data: session1.message_received(data))
+
+        iface = session1.remote_root_object.as_proxy(HelloIface)
+
+        async def run():
+            res = await iface.welcome(who="zielmicha")
+            assert res == "Hello zielmicha"
+
+            try:
+                await iface.welcome(who="")
+            except rpc.RemoteError as err:
+                assert str(err) == "ValueError: missing name", err
+            else:
+                assert False
+
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(run(), 5))
+
+    def test_complex(self):
+        session2: rpc_session.RpcSession
+        root1 = None
+        root2 = ComplexImpl()
+        session1 = rpc_session.RpcSession(root_object=root1,
+                                          on_message=lambda data: session2.message_received(data))
+        session2 = rpc_session.RpcSession(root_object=root2,
+                                          on_message=lambda data: session1.message_received(data))
+
+        iface = session1.remote_root_object.as_proxy(ComplexIface)
+
+        async def run():
+            greeter = await iface.get_greeter()
+            res = await greeter.welcome(who="zielmicha")
+            assert res == "Hello zielmicha"
+
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(run(), 5))
 
 if __name__ == '__main__':
     unittest.main()

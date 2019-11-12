@@ -65,6 +65,9 @@ class _BinaryPayload(AnyPayload):
     def unserialize(self, type_):
         return self.serializer.unserialize(type_, self.data)
 
+    def __repr__(self):
+        return '_BinaryPayload(%r, %r)' % (self.serializer, bytes(self.data))
+
 class TypedPayload(AnyPayload):
     def __init__(self, type_, value):
         self.type_ = type_
@@ -75,6 +78,9 @@ class TypedPayload(AnyPayload):
             raise TypeError('cannot unserialize %s as %s' % (self.type_, type_))
 
         return self.value
+
+    def __repr__(self):
+        return 'TypedPayload(%r, %r)' % (self.type_, self.value)
 
 @register_serializer(AnyPayload)
 def serialize_any_payload(value, serializer):

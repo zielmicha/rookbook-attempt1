@@ -17,7 +17,7 @@ class _RpcObj(RpcIface):
         return serialize.TypedPayload(value=return_obj, type_=method.return_type)
 
 class RpcMeta(type): # inherit from type to make Mypy happy
-    def __new__(self, name, bases, namespace):
+    def __new__(self, class_name, bases, namespace):
         abc_namespace: dict = {}
 
         by_id: dict = {}
@@ -31,11 +31,31 @@ class RpcMeta(type): # inherit from type to make Mypy happy
             if v.id in by_id:
                 raise ValueError('method id collision (%s vs %s)' % (by_id[v.id], v))
 
-            by_id[v.id] = _RpcMethod(name=name, param_type=v.param_type, return_type=v.return_type)
+            param_type = make_record(f'{class_name}.{name}_Params', v.param_fields)
+
+            by_id[v.id] = _RpcMethod(name=name, param_type=param_type, return_type=v.return_type)
 
         abc_namespace['_rpc_method_by_id'] = by_id
+        abc_namespace['__module__'] = namespace['__module__']
 
-        return abc.ABCMeta(name, bases + (_RpcObj,), abc_namespace)
+        iface_type = abc.ABCMeta(class_name, bases + (_RpcObj,), abc_namespace)
+
+        remote_proxy_namespace: dict = {}
+
+        for id, method in  by_id.items():
+            d = {}
+            d[f'_{method.name}_return_type'] = method.return_type
+            d[f'_{method.name}_param_type'] = method.param_type
+            d['TypedPayload'] = serialize.TypedPayload
+            exec(f'''def {method.name}(self, **params):
+                       return self.rpc_call({id}, TypedPayload(_{method.name}_param_type, _{method.name}_param_type(**params)), _{method.name}_return_type)''', d)
+            remote_proxy_namespace[method.name] = d[method.name]
+
+        iface_type.RemoteProxy = type(class_name + '.RemoteProxy', (iface_type, ), remote_proxy_namespace) # type: ignore
+
+        return iface_type
+
+class RemoteError(Exception): pass
 
 class _RpcMethod(NamedTuple):
     name: str
@@ -44,7 +64,7 @@ class _RpcMethod(NamedTuple):
 
 class _TmpRpcMethod(NamedTuple):
     id: int
-    param_type: Any
+    param_fields: Any
     return_type: Any
     method: Any
 
@@ -69,8 +89,6 @@ def rpcmethod(id: int):
                 **({} if param.default == inspect.Parameter.empty else {'default': param.default})
             ))
 
-        param_type = make_record('_Params', param_fields)
-
-        return _TmpRpcMethod(id=id, param_type=param_type, return_type=sig.return_annotation, method=method)
+        return _TmpRpcMethod(id=id, param_fields=param_fields, return_type=sig.return_annotation, method=method)
 
     return wrapper

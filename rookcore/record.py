@@ -102,16 +102,21 @@ def make_record(name, fields):
     for field in fields:
         dict[f'_default_{field.name}'] = field.default
 
-    exec('def __init__(self, *, %s):\n  %s' % (
-        ', '.join( f'{field.name}=_default_{field.name}' if field.default is not MISSING else field.name
-                   for field in fields),
+    fields_str = ', '.join( f'{field.name}=_default_{field.name}' if field.default is not MISSING else field.name
+                            for field in fields)
+
+    exec('def __init__(self, %s):\n  pass\n  %s' % (
+        '*, ' + fields_str if fields else '',
         '\n  '.join( f'if not self._T{field.name}({field.name}): raise TypeError("field {field.name} should have type {field.type}, but has value %r" % {field.name})\n  self._F{field.name} = {field.name}' for field in fields)), dict)
 
-    exec('def __hash__(self):\n  return hash((%s, ))' % (
-        ', '.join( field.name for field in fields)), dict)
+    if fields:
+        exec('def __hash__(self):\n  return hash((%s, ))' % (
+            ', '.join( field.name for field in fields)), dict)
+    else:
+        exec('def __hash__(self): return 0', dict)
 
     exec('def __eq__(self, other):\n  return self is other or (type(self) == type(other) and %s)' % (
-        ' and '.join( f'self.{field.name} == other.{field.name}' for field in fields )), dict)
+        ' and '.join( f'self.{field.name} == other.{field.name}' for field in fields )) if fields else 'True', dict)
 
     exec('def __repr__(self):\n  return "%s(%s)" %% (%s)' % (
         name,
