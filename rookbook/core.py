@@ -1,4 +1,5 @@
 from rookcore.reactive import reactive, reactive_dict_map, const_ref, reactive_property, Ref
+from rookcore.common import *
 from typing import *
 
 class Book:
@@ -6,7 +7,7 @@ class Book:
         self.cell_sources = cell_sources
         self._cell_sources = reactive_dict_map(f=lambda r: r, ref=cell_sources)
         self._cells = reactive_dict_map(f=self.eval_cell, ref=const_ref(self._cell_sources))
-        self.values = reactive_dict_map(f=lambda v: v, ref=reactive(self._get_values))
+        self.values = reactive_dict_map(f=lambda v: v.value, ref=reactive(self._get_values))
         self.ns = _Namespace(self)
         self.cell_types = cell_types
 
@@ -14,7 +15,6 @@ class Book:
         cells = self._cells
         result: Dict[str, Ref] = {}
         for cell_id in cells:
-            print(cells.dict_ref.value.dict_ref.value)
             cell = cells[cell_id]
             for k, v in cell.value.get_values().items():
                 if k in result:
@@ -23,12 +23,14 @@ class Book:
 
                 result[k] = v
 
-        return result
+        return frozendict(result)
 
     @reactive_property
     def require_all_values(self):
         for k in self.values.keys():
-            self.values[k].value
+            self.values[k]._record_read()
+
+        return self.values.keys()
 
     def eval_cell(self, source: Ref[str]):
         source = source.value.strip()
@@ -50,5 +52,8 @@ class _Namespace:
     def __getitem__(self, name):
         if name == '__builtins__':
             return __builtins__.__dict__
+
+        if name in ('print',):
+            raise KeyError()
 
         return self.__book.values[name].value

@@ -49,12 +49,19 @@ class _BaseRef(Ref):
         self._height = 0
         self._enabled = False
 
-    def _enable(self):
+    def _enable_internal(self):
         self._enabled = True
         for d in self._depends:
             # We start depending on `d`. This might enable `d` and change its height.
             d.__add_rdepend(self)
             self._height = max(self._height, d._height + 1)
+
+    def _enable(self):
+        assert not self._enabled
+        ref_enabled = getattr(_thread_local, 'ref_enabled', None)
+        if ref_enabled is not None: ref_enabled(self)
+
+        self._enable_internal()
 
     def _disable(self):
         self._enabled = False
@@ -78,7 +85,7 @@ class _BaseRef(Ref):
             enabled = self._enabled
             if enabled: self._disable()
             self._depends = new_depends
-            if enabled: self._enable()
+            if enabled: self._enable_internal()
 
     def _record_read(self):
         record_lookups = getattr(_thread_local, 'record_lookups', None)
@@ -103,19 +110,24 @@ class _OnceQueue:
         self.queue: List[Any] = []
         self.added = set()
 
-    def add(self, priority, item):
-        if item not in self.added:
-            heapq.heappush(self.queue, (priority, item))
+    def add(self, priority, item, force=False):
+        if force or item not in self.added:
+            # add [id(item)], so heap won't try to compare [item]s themselves
+            heapq.heappush(self.queue, (priority, id(item), item))
             self.added.add(item)
 
     def pop(self):
-        _, x = heapq.heappop(self.queue)
+        _, _, x = heapq.heappop(self.queue)
         return x
 
     def __bool__(self):
         return bool(self.queue)
 
 def stabilise():
+    # This is extremly tricky. At some point I should write a formal proof of its behaviour.
+    enabled_ref: list = []
+    _thread_local.ref_enabled = enabled_ref.append
+
     queue = _OnceQueue()
     for x in _set_vars: queue.add(x._height, x)
 
@@ -123,10 +135,18 @@ def stabilise():
         item = queue.pop()
         old_value = item._value
         item._refresh()
+
+        if enabled_ref:
+            for x in enabled_ref:
+                queue.add(x._height, x)
+            enabled_ref[:] = []
+            queue.add(item._height, item, force=True)
+
         if old_value != item._value:
             for x in item._rdepends:
                 queue.add(x._height, x)
 
+    _thread_local.ref_enabled = None
     _set_vars.clear()
 
 class VarRef(_BaseRef):
@@ -141,11 +161,16 @@ class VarRef(_BaseRef):
 
     @value.setter
     def value(self, x):
+        assert self._enabled
         assert not getattr(_thread_local, '_immutable_ctx', False)
         _set_vars[self] = x
 
     def _refresh(self):
-        self._value = _set_vars[self]
+        if self in _set_vars:
+            self._value = _set_vars[self]
+
+    def __repr__(self):
+        return 'VarRef(%s)' % (self._value)
 
 class ReactiveRef(_BaseRef):
     def __init__(self, refresh_f):
@@ -155,13 +180,11 @@ class ReactiveRef(_BaseRef):
         self._refresh()
 
     def _refresh(self):
-        try:
-            self._value, new_depends = self._refresh_f()
-        except Exception as err:
-            self._exception = err
-        else:
-            self._exception = None
-            self._set_depends(new_depends)
+        self._exception, self._value, new_depends = self._refresh_f()
+        if self._exception:
+            self._value = object() # unique value every time
+
+        self._set_depends(new_depends)
 
     @property
     def value(self):
@@ -171,11 +194,20 @@ class ReactiveRef(_BaseRef):
         else:
             return self._value
 
+    def __repr__(self):
+        if self._exception:
+            v = '<Error: %r>' % self._exception
+        else:
+            v = repr(self._value)
+
+        return 'ReactiveRef(%x %s)' % (id(self), v)
+
 class Observer(_BaseRef):
     def __init__(self, ref, callback=lambda: None):
         super().__init__()
         self._callback = callback
         self._depends = {ref}
+        self._ref = ref
         self._enable()
         self._value = None
 
@@ -190,6 +222,9 @@ class Observer(_BaseRef):
 
     def _refresh(self):
         self._callback()
+
+    def __repr__(self):
+        return '<Observer of %r>' % self._ref
 
 def const_ref(value):
     # TODO: block setter
@@ -207,15 +242,23 @@ def reactive_property(f):
     return property(wrapper)
 
 class ReactiveDictMap:
+    # If items would not depend on self.dict_ref we could avoid loops in many cases.
+    # Then only KeyError needs to be handled specially.
     def __init__(self, dict_ref, f):
         self.dict_ref = dict_ref
         self.f = f
-        self._refs: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+        # TODO: this probably interferes with enabled status
+        #self._refs: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+        self._refs = {}
 
     def __getitem__(self, key):
         r = self._refs.get(key)
         if not r:
-            r = reactive(lambda: self.f(self.dict_ref.value[key]))
+            def get():
+                res = self.dict_ref.value[key]
+                return self.f(res)
+
+            r = reactive(get)
             self._refs[key] = r
 
         return r
@@ -235,13 +278,17 @@ def _record_lookups(f):
     record_lookups: Set[Any] = set()
     _thread_local.record_lookups = record_lookups
     _thread_local.immutable_ctx = True
+    exception = None
+    result = None
     try:
         result = f()
+    except Exception as exc:
+        exception = exc
     finally:
         _thread_local.record_lookups = record_lookups_prev
         _thread_local.immutable_ctx = immutable_ctx_prev
 
-    return result, record_lookups
+    return exception, result, record_lookups
 
 def reactive(f):
     r = ReactiveRef(functools.partial(_record_lookups, f))
