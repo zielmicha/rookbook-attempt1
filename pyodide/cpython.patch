@@ -1,0 +1,83 @@
+diff --git a/cpython/Makefile b/cpython/Makefile
+index 553a46f..fc76c14 100644
+--- a/cpython/Makefile
++++ b/cpython/Makefile
+@@ -124,8 +124,8 @@ $(BUILD)/Makefile: $(BUILD)/.patched $(ZLIBBUILD)/.patched $(SQLITEBUILD)/libsql
+ 		cd $(BUILD); \
+ 		CONFIG_SITE=./config.site READELF=true LD_RUN_PATH="$(SQLITEBUILD):$(BZIP2BUILD)" emconfigure \
+ 		  ./configure \
+-			  CPPFLAGS="-I$(SQLITEBUILD) -I$(BZIP2BUILD)" \
+-			  LDFLAGS="-L$(SQLITEBUILD) -L$(BZIP2BUILD)" \
++			  CPPFLAGS="" \
++			  LDFLAGS="" \
+ 			  --without-pymalloc \
+ 			  --disable-shared \
+ 			  --disable-ipv6 \
+diff --git a/cpython/Setup.local b/cpython/Setup.local
+index 7b189a6..1e3cb1d 100644
+--- a/cpython/Setup.local
++++ b/cpython/Setup.local
+@@ -14,45 +14,45 @@ _bisect _bisectmodule.c	# Bisection algorithms
+ _datetime _datetimemodule.c
+ _heapq _heapqmodule.c
+ _json _json.c
+-_csv _csv.c
++#_csv _csv.c
+ unicodedata unicodedata.c
+ _pickle _pickle.c
+ parser parsermodule.c
+ 
+ _socket socketmodule.c
+ select selectmodule.c
+-_posixsubprocess _posixsubprocess.c
++#_posixsubprocess _posixsubprocess.c
+ binascii binascii.c
+ 
+ zlib zlibmodule.c -I../../zlib-1.2.11
+ 
+-pyexpat expat/xmlparse.c expat/xmlrole.c expat/xmltok.c pyexpat.c -I$(srcdir)/Modules/expat -DHAVE_EXPAT_CONFIG_H -DUSE_PYEXPAT_CAPI -DXML_POOR_ENTROPY
++#pyexpat expat/xmlparse.c expat/xmlrole.c expat/xmltok.c pyexpat.c -I$(srcdir)/Modules/expat -DHAVE_EXPAT_CONFIG_H -DUSE_PYEXPAT_CAPI -DXML_POOR_ENTROPY
+ 
+ _sha1 sha1module.c
+ _sha256 sha256module.c
+ _sha512 sha512module.c
+-_sha3 _sha3/sha3module.c
+-_md5 md5module.c
+-_blake2 _blake2/blake2module.c _blake2/blake2b_impl.c ../../host/Python-3.7.0/Modules/_blake2/blake2s_impl.c
++#_sha3 _sha3/sha3module.c
++#_md5 md5module.c
++#_blake2 _blake2/blake2module.c _blake2/blake2b_impl.c ../../host/Python-3.7.0/Modules/_blake2/blake2s_impl.c
+ 
+-_sqlite3 _sqlite/cache.c _sqlite/connection.c _sqlite/cursor.c _sqlite/microprotocols.c _sqlite/module.c _sqlite/prepare_protocol.c _sqlite/row.c _sqlite/statement.c _sqlite/util.c -I$(SQLITEBUILD) -L$(SQLITEBUILD) -lsqlite3
+-_crypt _cryptmodule.c
+-_bz2 _bz2module.c -I$(BZIP2BUILD) -L$(BZIP2BUILD) -lbz2
++#_sqlite3 _sqlite/cache.c _sqlite/connection.c _sqlite/cursor.c _sqlite/microprotocols.c _sqlite/module.c _sqlite/prepare_protocol.c _sqlite/row.c _sqlite/statement.c _sqlite/util.c -I$(SQLITEBUILD) -L$(SQLITEBUILD) -lsqlite3
++#_crypt _cryptmodule.c
++#_bz2 _bz2module.c -I$(BZIP2BUILD) -L$(BZIP2BUILD) -lbz2
+ 
+-_queue _queuemodule.c
++#_queue _queuemodule.c
+ 
+ #future_builtins future_builtins.c
+ 
+ _multibytecodec cjkcodecs/multibytecodec.c
+ 
+-_codecs_cn cjkcodecs/_codecs_cn.c
+-_codecs_hk cjkcodecs/_codecs_hk.c
+-_codecs_iso2022 cjkcodecs/_codecs_iso2022.c
+-_codecs_jp cjkcodecs/_codecs_jp.c
+-_codecs_kr cjkcodecs/_codecs_kr.c
+-_codecs_tw cjkcodecs/_codecs_tw.c
++#_codecs_cn cjkcodecs/_codecs_cn.c
++#_codecs_hk cjkcodecs/_codecs_hk.c
++#_codecs_iso2022 cjkcodecs/_codecs_iso2022.c
++#_codecs_jp cjkcodecs/_codecs_jp.c
++#_codecs_kr cjkcodecs/_codecs_kr.c
++#_codecs_tw cjkcodecs/_codecs_tw.c
+ 
+-_lsprof _lsprof.c rotatingtree.c
++#_lsprof _lsprof.c rotatingtree.c
+ 
+ _decimal _decimal/_decimal.c _decimal/libmpdec/basearith.c _decimal/libmpdec/constants.c _decimal/libmpdec/context.c _decimal/libmpdec/convolute.c _decimal/libmpdec/crt.c _decimal/libmpdec/difradix2.c _decimal/libmpdec/fnt.c _decimal/libmpdec/fourstep.c _decimal/libmpdec/io.c _decimal/libmpdec/memory.c _decimal/libmpdec/mpdecimal.c _decimal/libmpdec/numbertheory.c _decimal/libmpdec/sixstep.c _decimal/libmpdec/transpose.c -I$(srcdir)/Modules/_decimal/libmpdec
+-mmap mmapmodule.c
++#mmap mmapmodule.c

@@ -1,0 +1,3 @@
+DEVNULL = -3
+PIPE = -1
+STDOUT = -2
