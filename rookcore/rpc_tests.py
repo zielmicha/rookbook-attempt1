@@ -1,4 +1,4 @@
-import unittest, asyncio
+import unittest, asyncio, tempfile, functools
 from typing import *
 from .common import *
 from .record import *
@@ -51,6 +51,7 @@ class RpcTest(unittest.TestCase):
                                           on_message=lambda data: session2.message_received(data))
         session2 = rpc_session.RpcSession(root_object=root2,
                                           on_message=lambda data: session1.message_received(data))
+        session2._print_error = lambda result: None # type: ignore
 
         iface = session1.remote_root_object.as_proxy(HelloIface)
 
@@ -84,6 +85,26 @@ class RpcTest(unittest.TestCase):
             assert res == "Hello zielmicha"
 
         asyncio.get_event_loop().run_until_complete(asyncio.wait_for(run(), 5))
+
+    def test_unix_server(self):
+        root2 = HelloImpl()
+
+        async def run(path):
+            await asyncio.start_unix_server(
+                path=path,
+                client_connected_cb=functools.partial(rpc_session.RpcSession.start_on_stream, root2))
+
+            client_reader, client_writer = await asyncio.open_unix_connection(path=path)
+            sess = rpc_session.RpcSession.start_on_stream(None, client_reader, client_writer)
+            iface = sess.remote_root_object.as_proxy(HelloIface)
+
+            for i in range(10):
+                res = await iface.welcome(who="zielmicha%d" % i)
+                assert res == "Hello zielmicha%d" % i
+
+        with tempfile.TemporaryDirectory() as dir:
+            path = dir + '/socket'
+            asyncio.get_event_loop().run_until_complete(asyncio.wait_for(run(path), 5))
 
 if __name__ == '__main__':
     unittest.main()

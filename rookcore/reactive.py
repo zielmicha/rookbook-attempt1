@@ -30,11 +30,19 @@
 
 from typing import *
 import threading, weakref, functools, collections, heapq
+from abc import ABCMeta, abstractproperty
+
+T = TypeVar('T')
 
 _thread_local = threading.local()
 _set_vars = {}
 
-class _BaseRef:
+class Ref(Generic[T]):
+    @property
+    def value(self):
+        raise Exception('not supported')
+
+class _BaseRef(Ref):
     def __init__(self):
         self._rdepends = set()
         self._depends = set()
@@ -142,17 +150,26 @@ class VarRef(_BaseRef):
 class ReactiveRef(_BaseRef):
     def __init__(self, refresh_f):
         super().__init__()
+        self._exception = None
         self._refresh_f = refresh_f
         self._refresh()
 
     def _refresh(self):
-        self._value, new_depends = self._refresh_f()
-        self._set_depends(new_depends)
+        try:
+            self._value, new_depends = self._refresh_f()
+        except Exception as err:
+            self._exception = err
+        else:
+            self._exception = None
+            self._set_depends(new_depends)
 
     @property
     def value(self):
         self._record_read()
-        return self._value
+        if self._exception:
+            raise self._exception
+        else:
+            return self._value
 
 class Observer(_BaseRef):
     def __init__(self, ref, callback=lambda: None):
@@ -173,6 +190,44 @@ class Observer(_BaseRef):
 
     def _refresh(self):
         self._callback()
+
+def const_ref(value):
+    # TODO: block setter
+    return VarRef(value)
+
+def reactive_property(f):
+    def wrapper(self):
+        name = '_reactive__' + f.__name__
+        r = getattr(self, name, None)
+        if not r:
+            r = reactive(functools.partial(f, self))
+            setattr(self, name, r)
+        return r
+
+    return property(wrapper)
+
+class ReactiveDictMap:
+    def __init__(self, dict_ref, f):
+        self.dict_ref = dict_ref
+        self.f = f
+        self._refs: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+
+    def __getitem__(self, key):
+        r = self._refs.get(key)
+        if not r:
+            r = reactive(lambda: self.f(self.dict_ref.value[key]))
+            self._refs[key] = r
+
+        return r
+
+    def keys(self):
+        return self.dict_ref.value.keys()
+
+    def __iter__(self):
+        return iter(self.keys())
+
+def reactive_dict_map(f: Callable, ref: _BaseRef):
+    return ReactiveDictMap(ref, f)
 
 def _record_lookups(f):
     record_lookups_prev = getattr(_thread_local, 'record_lookups', None)

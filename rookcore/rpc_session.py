@@ -2,7 +2,7 @@ from typing import *
 from .record import *
 from .common import Bijection
 from . import serialize, rpc
-import weakref, dataclasses, functools, asyncio, traceback, sys
+import weakref, dataclasses, functools, asyncio, traceback, sys, struct
 
 CallRequest = make_record('CallRequest', [
     field('id', int, id=1),
@@ -39,6 +39,32 @@ SerializedObject = make_record('SerializedObject', {
 })
 
 class RpcSession:
+    @classmethod
+    def start_on_stream(cls, root_object, reader, writer):
+        def on_message(msg):
+            # FIXME: unbounded queue growth
+            # we might want to .drain() in read_loop, but beware of deadlocks!
+            writer.write(struct.pack('!I', len(msg)))
+            writer.write(msg)
+
+        session = cls(root_object, on_message)
+
+        async def read_loop():
+            try:
+                while True:
+                    value = await reader.readexactly(4)
+                    length, = struct.unpack('!I', value)
+                    if length > 1024 * 1024:
+                        raise Exception('message too big')
+
+                    data = await reader.readexactly(length)
+                    session.message_received(memoryview(data))
+            except Exception:
+                traceback.print_exc()
+
+        asyncio.ensure_future(read_loop())
+        return session
+
     def __init__(self, root_object, on_message):
         self.event_loop = asyncio.get_event_loop()
         self._on_message = on_message
@@ -109,8 +135,7 @@ class RpcSession:
             assert isinstance(result.result(), serialize.AnyPayload)
             response = CallResponse(id=call_id, value=result.result())
         else:
-            sys.stderr.write('Error in RPC call:\n')
-            result.print_stack()
+            self._print_error(result)
             response = CallResponse(id=call_id, is_error=True,
                                     value=serialize.TypedPayload(type_=str, value='%s: %s' % (type(exc).__name__, exc)))
 
@@ -118,6 +143,10 @@ class RpcSession:
         serialized = serializer.serialize_to_memoryview(RpcMessage, response)
         self._response_states[call_id] = serializer.ref_count_incremented
         self._on_message(serialized)
+
+    def _print_error(self, result):
+        sys.stderr.write('Error in RPC call:\n')
+        result.print_stack()
 
     def _decref(self, own_object):
         own_object.ref_count -= 1
