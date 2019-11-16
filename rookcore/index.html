@@ -12,17 +12,20 @@
   </div>
   <script src="/pyodide_dev.js"></script>
   <script>
-    var clientCode;
-    var clientCodeReady = fetch("/user-code.zip").then((body) => {
-       return body.arrayBuffer();
-    }).then((data) => { clientCode = data });
+    function startClientCode() {
+        var clientCode;
+        var clientCodeReady = fetch("/user-code.zip").then((body) => {
+           return body.arrayBuffer();
+        }).then((data) => { clientCode = data });
 
-    Promise.all([languagePluginLoader, clientCode]).then(() => {
-       pyodide.runPython("import os, sys; sys.path.append('/user-code.zip')");
-       let file = pyodide.globals.open('/user-code.zip', 'wb');
-       file.write(clientCode);
-       file.close();
-       pyodide.runPython("import main");
-    });
+        Promise.all([languagePluginLoader, clientCodeReady]).then(() => {
+           pyodide.runPython("import os, sys; sys.path.append('/user-code.zip')");
+           let file = pyodide.globals.open('/user-code.zip', 'wb');
+           file.write(clientCode);
+           file.close();
+           pyodide.runPython("import main");
+        });
+    }
+    startClientCode();
   </script>
 </body>

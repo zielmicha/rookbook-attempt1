@@ -68,12 +68,12 @@ class Widget(metaclass=ABCMeta):
 
             if key in self._children:
                 widget_obj = self._children[key]
+                widget_obj._params.value = _Args(widget.args, widget.kwargs)
             else:
                 print('creating widget!', widget)
                 widget_obj = widget.type_(*widget.args, **widget.kwargs)
 
             new_children[key] = widget_obj
-            widget_obj._params.value = _Args(widget.args, widget.kwargs)
             return widget_obj._dom_render.value
 
         result = _apply_dom_patch(src_vdom=self._current_vdom, src_dom=self._current_dom,

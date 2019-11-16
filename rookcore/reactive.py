@@ -124,7 +124,9 @@ class _OnceQueue:
         return bool(self.queue)
 
 def stabilise():
+    # zielmicha:
     # This is extremly tricky. At some point I should write a formal proof of its behaviour.
+    # (good randomized test would be even better)
     enabled_ref: list = []
     _thread_local.ref_enabled = enabled_ref.append
 

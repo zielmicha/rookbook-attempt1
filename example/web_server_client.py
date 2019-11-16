@@ -1,5 +1,6 @@
-from rookcore import record, reactive
+from rookcore import record, reactive, rpc, rpc_session, js_asyncio
 from rookwidget.core import h, widget, Widget, mount_widget
+import asyncio, traceback
 import js # type: ignore
 
 class TextBox(Widget):
@@ -27,4 +28,26 @@ def client_run():
         who.value += 1
         reactive.stabilise()
 
-    js.window.setInterval(cont, 2000) # leak
+    async def loop():
+        try:
+            while True:
+                cont()
+                await asyncio.sleep(2.0)
+        except Exception:
+            traceback.print_exc()
+
+    asyncio.ensure_future(loop())
+
+def pyreload():
+    import sys
+
+    for name, mod in list(sys.modules.items()):
+        f = getattr(mod, '__file__', None)
+        if f and f.startswith('/user-code.zip/'):
+            print('unload', name)
+            del sys.modules[name]
+
+    print('load new code')
+    js.window.startClientCode()
+
+js.window.pyreload = pyreload

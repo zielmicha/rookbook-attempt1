@@ -33,10 +33,12 @@ rsync --delete -r --exclude '__pycache__' \
       --exclude venv --exclude wsgiref --exclude xml --exclude turtledemo --exclude tkinter \
       --exclude test --exclude ensurepip --exclude idlelib --exclude distutils \
       --exclude lib2to3 --exclude pydoc_data --exclude email --exclude multiprocessing \
+      --exclude .mypy_cache \
       ./repo/cpython/installs/python-3.7.0/lib/python3.7/ root/lib/python3.7
 
-rsync -rv stdlib/ root/lib/python3.7/
+cp ./repo/src/*.py root/lib/python3.7/
+rsync --exclude .mypy_cache --exclude __pycache__ -rv stdlib/ root/lib/python3.7/
 
-python $FILEPACKAGER build/pyodide.asm.data --abi=$PYODIDE_PACKAGE_ABI --lz4 --js-output=build/pyodide.asm.data.js --use-preload-plugins --preload root
+python $FILEPACKAGER build/pyodide.asm.data --abi=$PYODIDE_PACKAGE_ABI --lz4 --js-output=build/pyodide.asm.data.js --use-preload-plugins --preload root/lib@lib
 
 #uglifyjs build/pyodide.asm.data.js -o build/pyodide.asm.data.js

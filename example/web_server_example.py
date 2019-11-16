@@ -8,7 +8,8 @@ class MyHandler(web_server.Handler):
     def get_user_code(self):
         return [
             'rookcore', 'rookcore.record', 'rookcore.reactive', 'rookcore.common',
-            'rookwidget', 'rookwidget.core', 'rookwidget.dom',
+            'rookwidget', 'rookwidget.core', 'rookwidget.dom', 'rookcore.js_asyncio',
+            'rookcore.serialize', 'rookcore.serialize_io', 'rookcore.rpc', 'rookcore.rpc_session',
             'example', 'example.web_server_client']
 
     @classmethod

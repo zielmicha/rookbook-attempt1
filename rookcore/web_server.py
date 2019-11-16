@@ -25,7 +25,7 @@ class WebServer:
             return get_static('text/html', os.path.join(base_dir, 'index.html'))
 
         if path in pyodide_file_map:
-            return get_static(pyodide_file_map[path], os.path.join(base_dir, '../pyodide' + path))
+            return get_static(pyodide_file_map[path], os.path.join(base_dir, '../pyodide/build' + path))
 
         if path in ("/user-code.zip", ):
             return http.HTTPStatus.OK, [('content-type', 'application/zip')], self.handler_cls.make_user_code_zip()
