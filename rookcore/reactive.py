@@ -31,24 +31,45 @@
 from typing import *
 import threading, weakref, functools, collections, heapq
 from abc import ABCMeta, abstractproperty
+try:
+    import cython
+except ImportError:
+    from . import fake_cython as cython
 
 T = TypeVar('T')
 
-_thread_local = threading.local()
+_thread_local: threading.local
+
+if cython.compiled:
+    class _thread_state:
+        pass
+
+    _thread_local: _thread_state = _thread_state() # type: ignore
+else:
+    _thread_local = threading.local()
+
 _set_vars = {}
+
+def init_thread_local():
+    _thread_local.ref_enabled = None
+    _thread_local.immutable_ctx = False
+    _thread_local.record_lookups = None
+
+init_thread_local()
 
 class Ref(Generic[T]):
     @property
     def value(self):
         raise Exception('not supported')
 
-class _BaseRef(Ref):
+class _BaseRef:
     def __init__(self):
         self._rdepends = set()
         self._depends = set()
         self._height = 0
         self._enabled = False
 
+    @cython.locals(d='_BaseRef')
     def _enable_internal(self):
         self._enabled = True
         for d in self._depends:
@@ -58,11 +79,12 @@ class _BaseRef(Ref):
 
     def _enable(self):
         assert not self._enabled
-        ref_enabled = getattr(_thread_local, 'ref_enabled', None)
-        if ref_enabled is not None: ref_enabled(self)
+        ref_enabled = _thread_local.ref_enabled
+        if ref_enabled is not None: ref_enabled.append(self)
 
         self._enable_internal()
 
+    @cython.locals(d='_BaseRef')
     def _disable(self):
         self._enabled = False
         for d in self._depends:
@@ -88,9 +110,12 @@ class _BaseRef(Ref):
             if enabled: self._enable_internal()
 
     def _record_read(self):
-        record_lookups = getattr(_thread_local, 'record_lookups', None)
+        record_lookups = _thread_local.record_lookups
         if record_lookups is not None:
             record_lookups.add(self)
+
+    def _refresh(self):
+        pass
 
 class _OnceQueue:
     '''
@@ -123,12 +148,13 @@ class _OnceQueue:
     def __bool__(self):
         return bool(self.queue)
 
+@cython.locals(x=_BaseRef, item=_BaseRef)
 def stabilise():
     # zielmicha:
     # This is extremly tricky. At some point I should write a formal proof of its behaviour.
     # (good randomized test would be even better)
     enabled_ref: list = []
-    _thread_local.ref_enabled = enabled_ref.append
+    _thread_local.ref_enabled = enabled_ref
 
     queue = _OnceQueue()
     for x in _set_vars: queue.add(x._height, x)
@@ -183,7 +209,7 @@ class ReactiveRef(_BaseRef):
 
     def _refresh(self):
         self._exception, self._value, new_depends = self._refresh_f()
-        if self._exception:
+        if self._exception is not None:
             self._value = object() # unique value every time
 
         self._set_depends(new_depends)
@@ -191,7 +217,7 @@ class ReactiveRef(_BaseRef):
     @property
     def value(self):
         self._record_read()
-        if self._exception:
+        if self._exception is not None:
             raise self._exception
         else:
             return self._value
@@ -275,8 +301,8 @@ def reactive_dict_map(f: Callable, ref: _BaseRef):
     return ReactiveDictMap(ref, f)
 
 def _record_lookups(f):
-    record_lookups_prev = getattr(_thread_local, 'record_lookups', None)
-    immutable_ctx_prev = getattr(_thread_local, 'immutable_ctx', False)
+    record_lookups_prev = _thread_local.record_lookups
+    immutable_ctx_prev = _thread_local.immutable_ctx
     record_lookups: Set[Any] = set()
     _thread_local.record_lookups = record_lookups
     _thread_local.immutable_ctx = True

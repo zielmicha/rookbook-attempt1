@@ -1,3 +1,6 @@
 .mypy_cache/
 *.pyc
 .pytype/
+/rookcore/reactive.c
+/rookcore/reactive.html
+*.so
