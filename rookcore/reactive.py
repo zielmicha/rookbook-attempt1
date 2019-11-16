@@ -117,6 +117,13 @@ class _BaseRef:
     def _refresh(self):
         pass
 
+class _QueueItem:
+    priority: int
+    value: object
+
+    def __lt__(self, other: '_QueueItem'):
+        return self.priority < other.priority
+
 class _OnceQueue:
     '''
     >>> x = _OnceQueue()
@@ -132,18 +139,21 @@ class _OnceQueue:
     '''
 
     def __init__(self):
-        self.queue: List[Any] = []
+        self.queue: list = []
         self.added = set()
 
-    def add(self, priority, item, force=False):
-        if force or item not in self.added:
+    def add(self, priority, value, force):
+        if force or value not in self.added:
             # add [id(item)], so heap won't try to compare [item]s themselves
-            heapq.heappush(self.queue, (priority, id(item), item))
-            self.added.add(item)
+            item = _QueueItem()
+            item.value = value
+            item.priority = priority
+            heapq.heappush(self.queue, item)
+            self.added.add(value)
 
     def pop(self):
-        _, _, x = heapq.heappop(self.queue)
-        return x
+        item: _QueueItem = heapq.heappop(self.queue)
+        return item.value
 
     def __bool__(self):
         return bool(self.queue)
@@ -157,7 +167,7 @@ def stabilise():
     _thread_local.ref_enabled = enabled_ref
 
     queue = _OnceQueue()
-    for x in _set_vars: queue.add(x._height, x)
+    for x in _set_vars: queue.add(x._height, x, force=False)
 
     while queue:
         item = queue.pop()
@@ -166,13 +176,13 @@ def stabilise():
 
         if enabled_ref:
             for x in enabled_ref:
-                queue.add(x._height, x)
+                queue.add(x._height, x, force=False)
             enabled_ref[:] = []
             queue.add(item._height, item, force=True)
 
         if old_value != item._value:
             for x in item._rdepends:
-                queue.add(x._height, x)
+                queue.add(x._height, x, force=False)
 
     _thread_local.ref_enabled = None
     _set_vars.clear()

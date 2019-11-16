@@ -6,6 +6,17 @@ cdef class _thread_state:
 
 cdef _thread_state _thread_local
 
+cdef class _QueueItem:
+   cdef int priority
+   cdef object value
+
+cdef class _OnceQueue:
+   cdef list queue
+   cdef set added
+
+   cdef void add(self, int priority, object value, bint force)
+   cdef object pop(self)
+
 cdef class _BaseRef:
    cdef set _rdepends
    cdef set _depends
