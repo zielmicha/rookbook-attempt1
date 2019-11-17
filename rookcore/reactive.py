@@ -38,22 +38,28 @@ except ImportError:
 
 T = TypeVar('T')
 
-_thread_local: threading.local
+_thread_local = threading.local()
 
-if cython.compiled:
-    class _thread_state:
-        pass
+class _thread_state:
+    pass
 
-    _thread_local: _thread_state = _thread_state() # type: ignore
-else:
-    _thread_local = threading.local()
+def _get_thread_local():
+    if cython.compiled:
+        assert _thread_local_c != cython.NULL
+        return cython.cast(_thread_state, _thread_local_c) # type: ignore
+    else:
+        return _thread_local # type: ignore
 
 _set_vars = {}
 
 def init_thread_local():
-    _thread_local.ref_enabled = None
-    _thread_local.immutable_ctx = False
-    _thread_local.record_lookups = None
+    if cython.compiled:
+        global _thread_local_c
+        _thread_local.state = _thread_state()
+        _thread_local_c = cython.cast(cython.p_void, _thread_local.state) # type: ignore
+    _get_thread_local().ref_enabled = None
+    _get_thread_local().immutable_ctx = False
+    _get_thread_local().record_lookups = None
 
 init_thread_local()
 
@@ -79,7 +85,7 @@ class _BaseRef:
 
     def _enable(self):
         assert not self._enabled
-        ref_enabled = _thread_local.ref_enabled
+        ref_enabled = _get_thread_local().ref_enabled
         if ref_enabled is not None: ref_enabled.append(self)
 
         self._enable_internal()
@@ -110,7 +116,7 @@ class _BaseRef:
             if enabled: self._enable_internal()
 
     def _record_read(self):
-        record_lookups = _thread_local.record_lookups
+        record_lookups = _get_thread_local().record_lookups
         if record_lookups is not None:
             record_lookups.add(self)
 
@@ -144,7 +150,6 @@ class _OnceQueue:
 
     def add(self, priority, value, force):
         if force or value not in self.added:
-            # add [id(item)], so heap won't try to compare [item]s themselves
             item = _QueueItem()
             item.value = value
             item.priority = priority
@@ -164,7 +169,7 @@ def stabilise():
     # This is extremly tricky. At some point I should write a formal proof of its behaviour.
     # (good randomized test would be even better)
     enabled_ref: list = []
-    _thread_local.ref_enabled = enabled_ref
+    _get_thread_local().ref_enabled = enabled_ref
 
     queue = _OnceQueue()
     for x in _set_vars: queue.add(x._height, x, force=False)
@@ -184,7 +189,7 @@ def stabilise():
             for x in item._rdepends:
                 queue.add(x._height, x, force=False)
 
-    _thread_local.ref_enabled = None
+    _get_thread_local().ref_enabled = None
     _set_vars.clear()
 
 class VarRef(_BaseRef):
@@ -200,7 +205,7 @@ class VarRef(_BaseRef):
     @value.setter
     def value(self, x):
         assert self._enabled
-        assert not getattr(_thread_local, '_immutable_ctx', False)
+        assert not _get_thread_local().immutable_ctx
         _set_vars[self] = x
 
     def _refresh(self):
@@ -311,11 +316,11 @@ def reactive_dict_map(f: Callable, ref: _BaseRef):
     return ReactiveDictMap(ref, f)
 
 def _record_lookups(f):
-    record_lookups_prev = _thread_local.record_lookups
-    immutable_ctx_prev = _thread_local.immutable_ctx
+    record_lookups_prev = _get_thread_local().record_lookups
+    immutable_ctx_prev = _get_thread_local().immutable_ctx
     record_lookups: Set[Any] = set()
-    _thread_local.record_lookups = record_lookups
-    _thread_local.immutable_ctx = True
+    _get_thread_local().record_lookups = record_lookups
+    _get_thread_local().immutable_ctx = True
     exception = None
     result = None
     try:
@@ -323,8 +328,8 @@ def _record_lookups(f):
     except Exception as exc:
         exception = exc
     finally:
-        _thread_local.record_lookups = record_lookups_prev
-        _thread_local.immutable_ctx = immutable_ctx_prev
+        _get_thread_local().record_lookups = record_lookups_prev
+        _get_thread_local().immutable_ctx = immutable_ctx_prev
 
     return exception, result, record_lookups
 

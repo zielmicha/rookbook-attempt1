@@ -4,7 +4,10 @@ cdef class _thread_state:
     cdef bint immutable_ctx
     cdef set record_lookups
 
-cdef _thread_state _thread_local
+cdef extern from "reactive_helpers.c":
+   void* _thread_local_c
+
+cdef _thread_state _get_thread_local()
 
 cdef class _QueueItem:
    cdef int priority
