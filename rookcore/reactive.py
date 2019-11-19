@@ -6,9 +6,9 @@
 4
 >>> len(z._depends)
 2
->>> x.value = 0
 >>> assert not x._enabled
 >>> z_observer = Observer(z)
+>>> x.value = 0
 >>> stabilise()
 >>> z.value
 2
@@ -45,7 +45,7 @@ class _thread_state:
 
 def _get_thread_local():
     if cython.compiled:
-        assert _thread_local_c != cython.NULL
+        assert _thread_local_c != cython.NULL # type: ignore
         return cython.cast(_thread_state, _thread_local_c) # type: ignore
     else:
         return _thread_local # type: ignore
@@ -133,9 +133,9 @@ class _QueueItem:
 class _OnceQueue:
     '''
     >>> x = _OnceQueue()
-    >>> x.add(2, "foo")
-    >>> x.add(2, "foo")
-    >>> x.add(1, "bar")
+    >>> x.add(2, "foo", False)
+    >>> x.add(2, "foo", False)
+    >>> x.add(1, "bar", False)
     >>> assert x
     >>> x.pop()
     'bar'
@@ -290,9 +290,9 @@ class ReactiveDictMap:
     def __init__(self, dict_ref, f):
         self.dict_ref = dict_ref
         self.f = f
-        # TODO: this probably interferes with enabled status
-        #self._refs: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
-        self._refs = {}
+        # zielmicha: Is WeakValueDictionary actually safe here?
+        self._refs: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+        #self._refs = {}
 
     def __getitem__(self, key):
         r = self._refs.get(key)

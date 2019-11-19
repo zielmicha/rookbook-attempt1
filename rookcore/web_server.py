@@ -1,4 +1,4 @@
-import asyncio, http, websockets, os, importlib.util, zipfile, io
+import asyncio, http, websockets, os, importlib.util, zipfile, io, glob
 
 def get_static(content_type, path):
     with open(path, 'rb') as f:
@@ -49,7 +49,6 @@ def get_module_data(name):
     if not spec: raise ImportError('no such module %r' % name)
     filename = spec.origin
     if not filename: raise ImportError('module %r has no associated file' % name)
-    with open(filename, 'r') as f: data = f.read()
 
     is_pkg = filename.endswith('/__init__.py')
     rel_filename = name.replace('.', '/')
@@ -58,7 +57,7 @@ def get_module_data(name):
     else:
         rel_filename += '.py'
 
-    return rel_filename, data
+    return rel_filename, filename
 
 class Handler:
     def __init__(self, websocket):
@@ -69,9 +68,26 @@ class Handler:
         out = io.BytesIO()
         z = zipfile.ZipFile(out, 'w')
 
-        for mod_name in self.get_user_code(): # type: ignore
-            arcname, data = get_module_data(mod_name)
-            z.writestr(arcname, data)
+        for mod_name in self.get_user_code():
+            if mod_name.endswith('.*'):
+                arcname, filename = get_module_data(mod_name[:-2])
+                if not filename.endswith('/__init__.py'):
+                    raise Exception('module wildcard %s doesn\'t match anything' % mod_name)
+
+
+                base_filename = arcname.rsplit('/', 1)[0]
+                base_arcname = arcname.rsplit('/', 1)[0]
+
+                modules = []
+                for name in os.listdir(base_filename):
+                    if name.endswith('.py'):
+                        modules.append((base_arcname + '/' + name, base_filename + '/' + name))
+            else:
+                modules = [get_module_data(mod_name)]
+
+            for arcname, filename in modules:
+                with open(filename, 'r') as f: data = f.read()
+                z.writestr(arcname, data)
 
         z.writestr('main.py', self.get_main_code()) # type: ignore
 

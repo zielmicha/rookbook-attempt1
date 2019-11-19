@@ -43,7 +43,7 @@ def pyreload():
 
     for name, mod in list(sys.modules.items()):
         f = getattr(mod, '__file__', None)
-        if f and f.startswith('/user-code.zip/'):
+        if f and f.startswith('/user-code'):
             print('unload', name)
             del sys.modules[name]
 
