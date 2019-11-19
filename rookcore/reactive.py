@@ -195,6 +195,8 @@ def stabilise():
 class VarRef(_BaseRef):
     def __init__(self, value):
         super().__init__()
+        # it's too easy to cause infinite loops in `stabilise` by making new VarRefs in reactive contexts
+        assert not _get_thread_local().immutable_ctx
         self._value = value
 
     @property

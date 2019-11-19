@@ -3,7 +3,7 @@ from rookcore.reactive import *
 from rookwidget import dom
 from typing import *
 from abc import abstractmethod, ABCMeta
-import itertools
+import itertools, weakref
 
 class _Element(NamedTuple):
     name: str
@@ -38,12 +38,34 @@ def widget(type_, *args, key=None, **kwargs):
     assert issubclass(type_, Widget)
     return _Widget(type_, key, frozenlist(args), frozendict(kwargs))
 
+_next_id = 1
+_widget_by_id: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
+
+def rookwidget_callback(id, func_name, *args):
+    w = _widget_by_id.get(id)
+    if w:
+        getattr(w, func_name)(*args)
+    else:
+        print('widget %d disappeared' % id)
+
+try:
+    import js
+except ImportError:
+    pass
+else:
+    js.window['rookwidget_callback'] = rookwidget_callback
+
 class Widget(metaclass=ABCMeta):
     def __init__(self, params):
         self._params = params
         self._children = {}
         self._current_vdom = None
         self._current_dom = None
+
+        global _next_id
+        self.id = _next_id
+        _widget_by_id[self.id] = self
+        _next_id += 1
 
     def init(self):
         pass
@@ -75,7 +97,7 @@ class Widget(metaclass=ABCMeta):
         return element, args
     
     @reactive_property
-    def _dom_render(self):
+    def dom_node(self):
         element, _ = self._render_internal.value
 
         new_children: dict = {}
@@ -92,7 +114,7 @@ class Widget(metaclass=ABCMeta):
                 child = widget.type_(reactive(lambda: self._render_internal.value[1][key]))
 
             new_children[key] = child
-            return child._dom_render.value
+            return child.dom_node.value
         
         result = _apply_dom_patch(src_vdom=self._current_vdom, src_dom=self._current_dom,
                                   dst_vdom=element,
@@ -160,6 +182,11 @@ def mount_widget(widget, parent):
         #parent.appendChild(child)
         parent.replaceChild(child, parent.childNodes[0])
 
-    set_child(widget._dom_render.value)
-    observer = Observer(widget._dom_render, lambda: set_child(widget._dom_render.value))
+    set_child(widget.dom_node.value)
+    observer = Observer(widget.dom_node, lambda: set_child(widget.dom_node.value))
     container.dataset.rookwidget_observer = observer
+
+def mount_root_widget(widget):
+    import js # type: ignore
+    js.document.body.innerHTML = ''
+    mount_widget(widget, js.document.body)
