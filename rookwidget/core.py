@@ -30,7 +30,7 @@ class _Widget(NamedTuple):
     args: List
     kwargs: Dict
 
-class _Args(NamedTuple):
+class WidgetArgs(NamedTuple):
     args: Tuple
     kwargs: Dict
 
@@ -39,12 +39,11 @@ def widget(type_, *args, key=None, **kwargs):
     return _Widget(type_, key, frozenlist(args), frozendict(kwargs))
 
 class Widget(metaclass=ABCMeta):
-    def __init__(self, *args, **kwargs):
-        self._params = VarRef(_Args(args, kwargs))
+    def __init__(self, params):
+        self._params = params
         self._children = {}
         self._current_vdom = None
         self._current_dom = None
-        self._dom_render = reactive(self._dom_render_internal)
 
     def init(self):
         pass
@@ -53,12 +52,33 @@ class Widget(metaclass=ABCMeta):
     def render(self):
         pass
 
-    def _dom_render_internal(self):
+    @reactive_property
+    def _render_internal(self):
         params = self._params.value
         self.init(*params.args, **params.kwargs) # type: ignore
 
         element = self.render()
-        new_children: Dict[Any, Widget] = {}
+        args: Dict[Any, Widget] = {}
+
+        def _add_child(widget):
+            key = widget.key or widget.type_
+            args[key] = widget
+
+        def _find_child_widgets(element):
+            if isinstance(element, _Element):
+                for ch in element.children: _find_child_widgets(ch)
+            elif isinstance(element, _Widget):
+                _add_child(element)
+
+        _find_child_widgets(element)
+
+        return element, args
+    
+    @reactive_property
+    def _dom_render(self):
+        element, _ = self._render_internal.value
+
+        new_children: dict = {}
 
         def get_child_widget(widget):
             key = widget.key or widget.type_
@@ -67,15 +87,13 @@ class Widget(metaclass=ABCMeta):
                 raise Exception('duplicate widget key %r' % key)
 
             if key in self._children:
-                widget_obj = self._children[key]
-                widget_obj._params.value = _Args(widget.args, widget.kwargs)
+                child = self._children[key]
             else:
-                print('creating widget!', widget)
-                widget_obj = widget.type_(*widget.args, **widget.kwargs)
+                child = widget.type_(reactive(lambda: self._render_internal.value[1][key]))
 
-            new_children[key] = widget_obj
-            return widget_obj._dom_render.value
-
+            new_children[key] = child
+            return child._dom_render.value
+        
         result = _apply_dom_patch(src_vdom=self._current_vdom, src_dom=self._current_dom,
                                   dst_vdom=element,
                                   get_child_widget=get_child_widget)

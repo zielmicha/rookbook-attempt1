@@ -1,5 +1,6 @@
-from rookcore import record, reactive, rpc, rpc_session, js_asyncio
-from rookwidget.core import h, widget, Widget, mount_widget
+from rookcore import record, rpc, rpc_session, js_asyncio
+from rookcore.reactive import reactive, VarRef, stabilise
+from rookwidget.core import h, widget, Widget, mount_widget, WidgetArgs
 import asyncio, traceback
 import js # type: ignore
 
@@ -15,18 +16,18 @@ class MyWidget(Widget):
         self.who = who
 
     def render(self):
-        return h('h1', {'style': 'color: red'}, 'Hello world: ', str(self.who.value), h('br', {'data-foo': str(self.who.value)}), widget(TextBox, placeholder='hello'))
+        return h('h1', {'style': 'color: red'}, 'Hello world: ', str(self.who), h('br', {'data-foo': str(self.who)}), widget(TextBox, placeholder='hello'))
 
 def client_run():
     js.document.body.innerHTML = ''
-    who = reactive.VarRef(0)
-    w = MyWidget(who)
+    who = VarRef(0)
+    w = MyWidget(reactive(lambda: WidgetArgs(args=(who.value,), kwargs={})))
     mount_widget(w, js.document.body)
-    reactive.stabilise()
+    stabilise()
 
     def cont():
         who.value += 1
-        reactive.stabilise()
+        stabilise()
 
     async def loop():
         try:
