@@ -40,6 +40,11 @@ cdef class ReactiveRef(_BaseRef):
    cdef object _exception
    cdef object _refresh_f
 
+cdef class CustomRef(_BaseRef):
+   cdef object _enable_callback
+   cdef object _disable_callback
+   cdef object _write_callback
+
 cdef class VarRef(_BaseRef):
    pass
 

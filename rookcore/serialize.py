@@ -4,6 +4,9 @@ from . import serialize_io
 SERIALIZERS = {}
 UNSERIALIZERS = {}
 
+GENERIC_SERIALIZERS = {}
+GENERIC_UNSERIALIZERS = {}
+
 def register_serializer(t):
     def f(v): SERIALIZERS[t] = v
     return f
@@ -54,6 +57,17 @@ def unserialize_str(value, serializer):
     expect_packed(value)
     return bytes(value).decode('utf8')
 
+@register_serializer(type(None))
+def serialize_none(value, serializer):
+    return 0
+
+@register_unserializer(type(None))
+def unserialize_none(value, serializer):
+    return None
+
+def assert_is_serializable_type(t):
+    return isinstance(t, type)
+
 class AnyPayload:
     def unserialize(self, type_): assert False
 
@@ -70,6 +84,7 @@ class _BinaryPayload(AnyPayload):
 
 class TypedPayload(AnyPayload):
     def __init__(self, type_, value):
+        assert_is_serializable_type(type_)
         self.type_ = type_
         self.value = value
 
@@ -104,6 +119,9 @@ class Serializer:
             message = type_._to_message(value, self) # type: ignore
             return serialize_io.write_message(message)
 
+        if getattr(type_, '__origin__', None) in GENERIC_SERIALIZERS:
+            return GENERIC_SERIALIZERS[getattr(type_, '__origin__')](type_.__args__, value, self)
+
         raise Exception('cannot serialize %s' % type(value))
 
     def serialize_to_memoryview(self, type_, value):
@@ -122,5 +140,8 @@ class Serializer:
         if hasattr(type_, "_from_message"):
             msg = serialize_io.read_message(value)
             return type_._from_message(msg, self)
+
+        if getattr(type_, '__origin__', None) in GENERIC_UNSERIALIZERS:
+            return GENERIC_UNSERIALIZERS[getattr(type_, '__origin__')](type_.__args__, value, self)
 
         raise Exception('cannot serialize %s' % type_)

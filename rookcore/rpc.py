@@ -33,7 +33,8 @@ class RpcMeta(type): # inherit from type to make Mypy happy
 
             param_type = make_record(f'{class_name}.{name}_Params', v.param_fields)
 
-            by_id[v.id] = _RpcMethod(name=name, param_type=param_type, return_type=v.return_type)
+            by_id[v.id] = _RpcMethod(name=name, param_type=param_type,
+                                     return_type=v.return_type if v.return_type is not None else type(None))
 
         abc_namespace['_rpc_method_by_id'] = by_id
         abc_namespace['__module__'] = namespace['__module__']
@@ -47,8 +48,8 @@ class RpcMeta(type): # inherit from type to make Mypy happy
             d[f'_{method.name}_return_type'] = method.return_type
             d[f'_{method.name}_param_type'] = method.param_type
             d['TypedPayload'] = serialize.TypedPayload
-            exec(f'''def {method.name}(self, **params):
-                       return self.rpc_call({id}, TypedPayload(_{method.name}_param_type, _{method.name}_param_type(**params)), _{method.name}_return_type)''', d)
+            exec(f'''def {method.name}(self, **kwargs):
+                       return self.rpc_call({id}, TypedPayload(_{method.name}_param_type, _{method.name}_param_type(**kwargs)), _{method.name}_return_type)''', d)
             remote_proxy_namespace[method.name] = d[method.name]
 
         iface_type.RemoteProxy = type(class_name + '.RemoteProxy', (iface_type, ), remote_proxy_namespace) # type: ignore
@@ -72,7 +73,7 @@ def rpcmethod(id: int):
     def wrapper(method):
         sig = inspect.signature(method)
 
-        assert sig.return_annotation != inspect.Parameter.empty # type: ignore
+        assert sig.return_annotation != inspect.Parameter.empty, "missing return type annotation" # type: ignore
 
         param_fields = []
 

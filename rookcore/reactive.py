@@ -36,6 +36,8 @@ try:
 except ImportError:
     from . import fake_cython as cython
 
+__all__ = ['reactive', 'VarRef', 'stabilise', 'Ref', 'Observer', 'reactive_dict_map']
+
 T = TypeVar('T')
 
 _thread_local = threading.local()
@@ -123,6 +125,40 @@ class _BaseRef:
     def _refresh(self):
         pass
 
+class CustomRef(_BaseRef):
+    def __init__(self, initial_value, write_callback, enable_callback, disable_callback):
+        super().__init__()
+        self._value = initial_value
+        self._enable_callback = enable_callback
+        self._disable_callback = disable_callback
+        self._write_callback = write_callback
+
+    def _enable(self):
+        self._enable_callback()
+        super()._enable()
+
+    def _disable(self):
+        self._disable_callback()
+        super()._disable()
+
+    @property
+    def value(self):
+        self._record_read()
+        return self._value
+
+    @value.setter
+    def value(self, x):
+        self.change_value(x)
+        self._write_callback(x)
+
+    def change_value(self, x):
+        assert not _get_thread_local().immutable_ctx
+        _set_vars[self] = x
+
+    def _refresh(self):
+        if self in _set_vars:
+            self._value = _set_vars[self]
+
 class _QueueItem:
     priority: int
     value: object
@@ -206,7 +242,6 @@ class VarRef(_BaseRef):
 
     @value.setter
     def value(self, x):
-        assert self._enabled
         assert not _get_thread_local().immutable_ctx
         _set_vars[self] = x
 
@@ -250,6 +285,7 @@ class ReactiveRef(_BaseRef):
 class Observer(_BaseRef):
     def __init__(self, ref, callback=lambda: None):
         super().__init__()
+        assert isinstance(ref, _BaseRef)
         self._callback = callback
         self._depends = {ref}
         self._ref = ref

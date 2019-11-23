@@ -17,14 +17,14 @@ def h(name, *args):
     for arg in args:
         if isinstance(arg, dict):
             attrs.update(arg)
-        elif isinstance(arg, (_Widget, _Element, str)):
+        elif isinstance(arg, (WidgetDef, _Element, str)):
             children.append(arg)
         else:
             raise TypeError('unknown element: %r' % arg)
 
     return _Element(name, attrs, children)
 
-class _Widget(NamedTuple):
+class WidgetDef(NamedTuple):
     type_: Any
     key: Any
     args: List
@@ -34,9 +34,9 @@ class WidgetArgs(NamedTuple):
     args: Tuple
     kwargs: Dict
 
-def widget(type_, *args, key=None, **kwargs):
+def widget(type_, *args, key=None, **kwargs) -> WidgetDef:
     assert issubclass(type_, Widget)
-    return _Widget(type_, key, frozenlist(args), frozendict(kwargs))
+    return WidgetDef(type_, key, frozenlist(args), frozendict(kwargs))
 
 _next_id = 1
 _widget_by_id: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
@@ -67,9 +67,6 @@ class Widget(metaclass=ABCMeta):
         _widget_by_id[self.id] = self
         _next_id += 1
 
-    def init(self):
-        pass
-
     @abstractmethod
     def render(self):
         pass
@@ -89,7 +86,7 @@ class Widget(metaclass=ABCMeta):
         def _find_child_widgets(element):
             if isinstance(element, _Element):
                 for ch in element.children: _find_child_widgets(ch)
-            elif isinstance(element, _Widget):
+            elif isinstance(element, WidgetDef):
                 _add_child(element)
 
         _find_child_widgets(element)
@@ -124,6 +121,9 @@ class Widget(metaclass=ABCMeta):
         self._children = frozendict(new_children)
         return result
 
+    def event_handler(self, func):
+        return 'rookwidget_callback(%d, "%s", event)' % (self.id, func)
+    
 def _apply_dom_patch(src_vdom, src_dom, dst_vdom, get_child_widget):
     if isinstance(dst_vdom, _Element):
         if not isinstance(src_vdom, _Element) or src_vdom.name != dst_vdom.name:
@@ -163,7 +163,7 @@ def _apply_dom_patch(src_vdom, src_dom, dst_vdom, get_child_widget):
                         result.replaceChild(child_result, child_dom)
 
         return result
-    elif isinstance(dst_vdom, _Widget):
+    elif isinstance(dst_vdom, WidgetDef):
         return get_child_widget(dst_vdom)
     elif isinstance(dst_vdom, str):
         if src_vdom == dst_vdom:
