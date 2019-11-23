@@ -64,7 +64,6 @@ class JsLoop(asyncio.events.AbstractEventLoop):
         self._task_factory = factory
 
     def get_task_factory(self):
-        """Return a task factory, or None if the default one is in use."""
         return self._task_factory
 
     def get_debug(self):

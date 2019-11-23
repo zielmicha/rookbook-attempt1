@@ -36,7 +36,7 @@ try:
 except ImportError:
     from . import fake_cython as cython
 
-__all__ = ['reactive', 'VarRef', 'stabilise', 'Ref', 'Observer', 'reactive_dict_map']
+__all__ = ['reactive', 'VarRef', 'stabilise', 'Ref', 'Observer', 'reactive_dict_map', 'reactive_property']
 
 T = TypeVar('T')
 

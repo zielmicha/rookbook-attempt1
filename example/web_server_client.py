@@ -1,6 +1,7 @@
-from rookcore import record, rpc, rpc_session, js_asyncio
+from rookcore import record, rpc, rpc_session, js_asyncio, js_rpc, async_tools
 from rookcore.reactive import reactive, VarRef, stabilise
 from rookwidget.core import h, widget, Widget, mount_root_widget, WidgetArgs
+from . import web_server_common
 import asyncio, traceback
 import js # type: ignore
 
@@ -46,14 +47,22 @@ def client_run():
         stabilise()
 
     async def loop():
-        try:
-            while True:
-                cont()
-                await asyncio.sleep(2.0)
-        except Exception:
-            traceback.print_exc()
+        while True:
+            cont()
+            await asyncio.sleep(2.0)
 
-    asyncio.ensure_future(loop())
+    async_tools.run_in_background(loop())
+
+    async def rpc_main():
+
+        session = await js_rpc.start_websocket_rpc_session('/websocket', root_object=None)
+        iface = session.remote_root_object.as_proxy(web_server_common.ServerIface)
+
+        m = await iface.welcome(who='michal')
+        print(m)
+        print('end')
+
+    async_tools.run_in_background(rpc_main())
 
 def pyreload():
     import sys

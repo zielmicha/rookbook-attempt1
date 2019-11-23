@@ -41,7 +41,7 @@ class RpcMeta(type): # inherit from type to make Mypy happy
 
         iface_type = abc.ABCMeta(class_name, bases + (_RpcObj,), abc_namespace)
 
-        remote_proxy_namespace: dict = {}
+        remote_proxy_namespace: dict = {'__module__': namespace['__module__']}
 
         for id, method in  by_id.items():
             d = {}

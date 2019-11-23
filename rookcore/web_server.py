@@ -1,4 +1,5 @@
 import asyncio, http, websockets, os, importlib.util, zipfile, io, glob
+from . import async_tools, rpc_session
 
 def get_static(content_type, path):
     with open(path, 'rb') as f:
@@ -93,3 +94,13 @@ class Handler:
 
         z.close()
         return out.getvalue()
+
+    async def run_rpc(self, root_obj):
+        def write(msg):
+            async_tools.run_in_background(self.websocket.send(msg))
+
+        session = rpc_session.RpcSession(root_object=root_obj,
+                                         on_message=write)
+
+        async for msg in self.websocket:
+            session.message_received(memoryview(msg))
