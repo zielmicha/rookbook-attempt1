@@ -2,7 +2,7 @@ from typing import *
 from .record import *
 from .common import Bijection
 from . import serialize, rpc
-import weakref, dataclasses, functools, asyncio, traceback, sys, struct
+import weakref, dataclasses, functools, asyncio, traceback, sys, struct, abc
 
 CallRequest = make_record('CallRequest', [
     field('id', int, id=1),
@@ -213,7 +213,7 @@ class _RpcSerializer(serialize.Serializer):
         self.ref_count_incremented = []
 
     def serialize(self, type_, value):
-        if issubclass(type_, rpc.RpcIface):
+        if type(type_) == abc.ABCMeta and issubclass(type_, rpc.RpcIface):
             serialized_obj = self._serialize_obj(value)
             return super().serialize(SerializedObject, serialized_obj)
         else:
@@ -258,7 +258,7 @@ class _RpcSerializer(serialize.Serializer):
         return SerializedObject(own_id=id)
 
     def unserialize(self, type_, value):
-        if issubclass(type_, rpc.RpcIface):
+        if type(type_) == abc.ABCMeta and issubclass(type_, rpc.RpcIface):
             obj = super().unserialize(SerializedObject, value)
             return self._unserialize_obj(type_, obj)
         else:

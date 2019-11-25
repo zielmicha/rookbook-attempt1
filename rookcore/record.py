@@ -83,6 +83,8 @@ def isinstance_plus(value, type_):
                 return False
 
         return True
+    elif origin is not None:
+        return True # TODO: somehow implement this?
 
     return isinstance(value, type_)
 

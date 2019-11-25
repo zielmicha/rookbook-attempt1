@@ -10,6 +10,9 @@ class RpcIface:
 
 class _RpcObj(RpcIface):
     async def rpc_call(self, method_id, params: serialize.AnyPayload):
+        if method_id not in self._rpc_method_by_id:
+            raise NotImplementedError('no such method %d at %s' % (method_id, self))
+
         method = self._rpc_method_by_id[method_id] # type: ignore
         params_obj = params.unserialize(method.param_type)
         return_obj = await getattr(self, method.name)(**params_obj._to_dict())

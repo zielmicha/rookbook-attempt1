@@ -122,7 +122,7 @@ class Serializer:
         if getattr(type_, '__origin__', None) in GENERIC_SERIALIZERS:
             return GENERIC_SERIALIZERS[getattr(type_, '__origin__')](type_.__args__, value, self)
 
-        raise Exception('cannot serialize %s' % type(value))
+        raise Exception('cannot serialize type=%s value=%s' % (type_, type(value)))
 
     def serialize_to_memoryview(self, type_, value):
         x = self.serialize(type_, value)

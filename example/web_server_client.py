@@ -22,9 +22,10 @@ class TextBox(Widget):
         stabilise()
 
 class MyWidget(Widget):
-    def init(self, who, text_var):
+    def init(self, who, text_var, m_ref):
         self.who = who
         self.text_var = text_var
+        self.m_ref = m_ref
 
     def render(self):
         return h('h1', {'style': 'color: red'}, 'Hello world: ', str(self.who),
@@ -32,15 +33,13 @@ class MyWidget(Widget):
                  widget(TextBox, placeholder='hello', text_var=self.text_var),
                  widget(TextBox, placeholder='hello', text_var=self.text_var, key='w2'),
                  h('br'),
+                 self.m_ref.value,
                  h('div', self.text_var.value.upper())
         )
 
 def client_run():
     who = VarRef(0)
     text_var = VarRef('xoxo')
-    w = MyWidget(reactive(lambda: WidgetArgs(args=(who.value, text_var), kwargs={})))
-    mount_root_widget(w)
-    stabilise()
 
     def cont():
         who.value += 1
@@ -51,16 +50,21 @@ def client_run():
             cont()
             await asyncio.sleep(2.0)
 
-    async_tools.run_in_background(loop())
-
     async def rpc_main():
-
         session = await js_rpc.start_websocket_rpc_session('/websocket', root_object=None)
         iface = session.remote_root_object.as_proxy(web_server_common.ServerIface)
 
         m = await iface.welcome(who='michal')
         print(m)
-        print('end')
+
+        m_ref = await iface.welcome_reactive(who=text_var)
+        print(m)
+
+        w = MyWidget(reactive(lambda: WidgetArgs(args=(who.value, text_var, m_ref), kwargs={})))
+        mount_root_widget(w)
+        stabilise()
+
+        async_tools.run_in_background(loop())
 
     async_tools.run_in_background(rpc_main())
 
