@@ -1,7 +1,7 @@
 from typing import *
 from .record import *
 from . import serialize
-import inspect, abc
+import inspect, abc, asyncio
 
 __all__ = ['RpcIface', 'RpcMeta', 'rpcmethod']
 
@@ -15,7 +15,10 @@ class _RpcObj(RpcIface):
 
         method = self._rpc_method_by_id[method_id] # type: ignore
         params_obj = params.unserialize(method.param_type)
-        return_obj = await getattr(self, method.name)(**params_obj._to_dict())
+        fut = getattr(self, method.name)(**params_obj._to_dict())
+        if not asyncio.iscoroutine(fut):
+            raise Exception('%s didn\'t return coroutine' % method.name)
+        return_obj = await fut
 
         return serialize.TypedPayload(value=return_obj, type_=method.return_type)
 

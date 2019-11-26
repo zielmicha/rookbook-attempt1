@@ -26,13 +26,12 @@ def open_websocket(websocket_url, on_message):
 
 async def start_websocket_rpc_session(websocket_url, root_object):
     def on_message(event):
-        print(event.data, type(event.data))
         session.message_received(memoryview(event.data))
 
     ws = await open_websocket(websocket_url, on_message)
 
     def send(data):
-        print('send', data)
+        print('send', bytes(data))
         ws.send(data)
 
     session = rpc_session.RpcSession(root_object=root_object, on_message=send)

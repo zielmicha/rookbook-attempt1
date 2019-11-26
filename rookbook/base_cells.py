@@ -1,13 +1,16 @@
 from rookcore.common import *
+from rookcore.record import *
 from rookcore.reactive import reactive
 
-class ValCellType:
+class ValCell:
     @classmethod
     def parse(cls, book, text):
         name, code = text.split('=', 1)
         name = name.strip()
         code = code.strip()
         return cls(book, name, code)
+
+    cell_type = 'val'
 
     def __init__(self, book, name, code):
         self.book = book
@@ -20,5 +23,5 @@ class ValCellType:
         }
 
 cell_types = frozendict({
-    'val': ValCellType
+    'val': ValCell
 })

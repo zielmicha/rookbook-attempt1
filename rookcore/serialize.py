@@ -1,5 +1,5 @@
-import functools
-from . import serialize_io
+import functools, typing
+from . import serialize_io, record
 
 SERIALIZERS = {}
 UNSERIALIZERS = {}
@@ -85,6 +85,7 @@ class _BinaryPayload(AnyPayload):
 class TypedPayload(AnyPayload):
     def __init__(self, type_, value):
         assert_is_serializable_type(type_)
+        assert record.isinstance_plus(value, type_), (type_, value)
         self.type_ = type_
         self.value = value
 
@@ -109,6 +110,20 @@ def serialize_any_payload(value, serializer):
 @register_unserializer(AnyPayload)
 def unserialize_any_payload(value, serializer):
     return _BinaryPayload(serializer=serializer, data=value)
+
+def serialize_generic_list(args, value, serializer):
+    subtype, = args
+    return serialize_io.write_message([ (0, serializer.serialize(type_=subtype, value=v)) for v in value ])
+
+def unserialize_generic_list(args, value, serializer):
+    subtype, = args
+    msg = serialize_io.read_message(value)
+    return [ serializer.unserialize(type_=subtype, value=v) for i, v in msg if i == 0 ]
+
+GENERIC_SERIALIZERS[typing.List] = serialize_generic_list
+GENERIC_UNSERIALIZERS[typing.List] = unserialize_generic_list
+GENERIC_SERIALIZERS[list] = serialize_generic_list
+GENERIC_UNSERIALIZERS[list] = unserialize_generic_list
 
 class Serializer:
     def serialize(self, type_, value):
@@ -144,4 +159,4 @@ class Serializer:
         if getattr(type_, '__origin__', None) in GENERIC_UNSERIALIZERS:
             return GENERIC_UNSERIALIZERS[getattr(type_, '__origin__')](type_.__args__, value, self)
 
-        raise Exception('cannot serialize %s' % type_)
+        raise Exception('cannot unserialize %s (origin: %s)' % (type_, getattr(type_, '__origin__', None)))

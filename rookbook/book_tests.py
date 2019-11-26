@@ -7,7 +7,7 @@ class BookTest(unittest.TestCase):
     def test_simple(self):
         cells = VarRef(frozendict({}))
         cells_o = Observer(cells)
-        book = core.Book(cell_types=base_cells.cell_types, cell_sources=cells)
+        book = core.BookScope(cell_types=base_cells.cell_types, cell_sources=cells)
 
         o = Observer(book.require_all_values)
 

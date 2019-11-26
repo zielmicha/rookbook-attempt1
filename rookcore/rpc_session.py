@@ -250,6 +250,7 @@ class _RpcSerializer(serialize.Serializer):
 
         id = self.session._next_own_object_id
         self.session._next_own_object_id += 1
+        assert hasattr(obj, 'rpc_call'), obj
         own_object = _OwnObject(obj=obj, ref_count=1, id=id)
         self.ref_count_incremented.append(own_object)
         self.session._own_objects_by_obj[obj] = own_object

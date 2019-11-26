@@ -34,6 +34,10 @@ class WidgetArgs(NamedTuple):
     args: Tuple
     kwargs: Dict
 
+    @staticmethod
+    def make(*args, **kwargs):
+        return WidgetArgs(args, kwargs)
+
 def widget(type_, *args, key=None, **kwargs) -> WidgetDef:
     assert issubclass(type_, Widget)
     return WidgetDef(type_, key, frozenlist(args), frozendict(kwargs))

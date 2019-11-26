@@ -36,7 +36,7 @@ try:
 except ImportError:
     from . import fake_cython as cython
 
-__all__ = ['reactive', 'VarRef', 'stabilise', 'Ref', 'Observer', 'reactive_dict_map', 'reactive_property']
+__all__ = ['reactive', 'VarRef', 'stabilise', 'Ref', 'Observer', 'reactive_dict_map', 'reactive_property', 'const_ref']
 
 T = TypeVar('T')
 
@@ -158,6 +158,9 @@ class CustomRef(_BaseRef):
     def _refresh(self):
         if self in _set_vars:
             self._value = _set_vars[self]
+
+    def __repr__(self):
+        return 'CustomRef(%s)' % (self._value)
 
 class _QueueItem:
     priority: int
@@ -308,8 +311,8 @@ class Observer(_BaseRef):
         return '<Observer of %r>' % self._ref
 
 def const_ref(value):
-    # TODO: block setter
-    return VarRef(value)
+    # TODO: opt
+    return reactive(lambda: value)
 
 def reactive_property(f):
     def wrapper(self):

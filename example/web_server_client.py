@@ -67,17 +67,3 @@ def client_run():
         async_tools.run_in_background(loop())
 
     async_tools.run_in_background(rpc_main())
-
-def pyreload():
-    import sys
-
-    for name, mod in list(sys.modules.items()):
-        f = getattr(mod, '__file__', None)
-        if f and f.startswith('/user-code'):
-            print('unload', name)
-            del sys.modules[name]
-
-    print('load new code')
-    js.window.startClientCode()
-
-js.window.pyreload = pyreload

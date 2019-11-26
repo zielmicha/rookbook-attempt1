@@ -1,5 +1,11 @@
-import asyncio, http, websockets, os, importlib.util, zipfile, io, glob
+import asyncio, http, os, importlib.util, zipfile, io, glob
 from . import async_tools, rpc_session
+
+try:
+    # TODO: we should have js stub for that
+    import websockets
+except ImportError:
+    pass
 
 def get_static(content_type, path):
     with open(path, 'rb') as f:
@@ -15,8 +21,8 @@ pyodide_file_map = {
 }
 
 class WebServer:
-    def __init__(self, handler_cls):
-        self.handler_cls = handler_cls
+    def __init__(self, handler):
+        self.handler = handler
 
     async def process_request(self, path, request_headers):
         path = path.split('?')[0]
@@ -29,17 +35,19 @@ class WebServer:
             return get_static(pyodide_file_map[path], os.path.join(base_dir, '../pyodide/build' + path))
 
         if path in ("/user-code.zip", ):
-            return http.HTTPStatus.OK, [('content-type', 'application/zip')], self.handler_cls.make_user_code_zip()
+            return http.HTTPStatus.OK, [('content-type', 'application/zip')], self.handler.make_user_code_zip()
 
         if path != "/websocket":
             return http.HTTPStatus.NOT_FOUND, [], b'not found'
 
     async def handle_websocket(self, websocket, path):
-        await self.handler_cls(websocket).run()
+        if path == '/websocket':
+            await self.handler.run(websocket)
 
     def main(self, host, port):
         start_server = websockets.serve(
-            self.handle_websocket, host, port, process_request=self.process_request
+            self.handle_websocket, host, port, process_request=self.process_request,
+            origins=['http://%s:%d' % (host, port), 'https://%s:%d' % (host, port)] # type: ignore
         )
 
         asyncio.get_event_loop().run_until_complete(start_server)
@@ -95,12 +103,12 @@ class Handler:
         z.close()
         return out.getvalue()
 
-    async def run_rpc(self, root_obj):
+    async def run_rpc(self, websocket, root_obj):
         def write(msg):
-            async_tools.run_in_background(self.websocket.send(msg))
+            async_tools.run_in_background(websocket.send(msg))
 
         session = rpc_session.RpcSession(root_object=root_obj,
                                          on_message=write)
 
-        async for msg in self.websocket:
+        async for msg in websocket:
             session.message_received(memoryview(msg))

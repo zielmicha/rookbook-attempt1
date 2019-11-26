@@ -1,18 +1,21 @@
-from rookcore.reactive import reactive, reactive_dict_map, const_ref, reactive_property, Ref
+from rookcore.reactive import *
 from rookcore.common import *
+from rookcore.record import *
+from rookcore import rpc, serialize
 from typing import *
+import os, json
 
-class Book:
-    def __init__(self, cell_types, cell_sources):
+class BookScope:
+    def __init__(self, cell_types, cell_sources: Ref[Dict[str, str]]):
         self.cell_sources = cell_sources
         self._cell_sources = reactive_dict_map(f=lambda r: r, ref=cell_sources)
-        self._cells = reactive_dict_map(f=self.eval_cell, ref=const_ref(self._cell_sources))
+        self.cells = reactive_dict_map(f=self._eval_cell, ref=const_ref(self._cell_sources))
         self.values = reactive_dict_map(f=lambda v: v.value, ref=reactive(self._get_values))
         self.ns = _Namespace(self)
         self.cell_types = cell_types
 
     def _get_values(self):
-        cells = self._cells
+        cells = self.cells
         result: Dict[str, Ref] = {}
         for cell_id in cells:
             cell = cells[cell_id]
@@ -32,15 +35,14 @@ class Book:
 
         return self.values.keys()
 
-    def eval_cell(self, source: Ref[str]):
+    def _eval_cell(self, source: Ref[str]):
         source = source.value.strip()
         if not source.startswith('%'): raise Exception('source should start with "%"')
 
         mod_name, rest = source[1:].split(None, 1)
         return self.cell_types[mod_name].parse(self, rest)
 
-    def reload(self):
-        pass
+builtins_dict = __builtins__
 
 class _Namespace:
     def __init__(self, book):
@@ -51,9 +53,99 @@ class _Namespace:
 
     def __getitem__(self, name):
         if name == '__builtins__':
-            return __builtins__.__dict__
+            return builtins_dict
 
-        if name in ('print',):
+        if name in builtins_dict:
             raise KeyError()
 
         return self.__book.values[name].value
+
+OnDiskCellInfo = make_record('OnDiskCellInfo', [
+    field('uuid', id=1, type=str),
+    field('code', id=2, type=str),
+])
+
+RemoteCellInfo = make_record('RemoteCellInfo', [
+    field('uuid', id=1, type=str),
+    field('code', id=2, type=str),
+    field('cell_widget_type', id=3, type=str),
+    field('widget_data', id=4, type=serialize.AnyPayload),
+])
+
+class SheetData:
+    def __init__(self, cells: List[OnDiskCellInfo]):
+        self.cells = VarRef({
+            c.uuid: VarRef(c.code) for c in cells
+        })
+        self.visible_cells = VarRef([ cell.uuid for cell in cells ])
+
+    @classmethod
+    def load_from_file(self, path):
+        with open(path, 'r') as f: data = json.load(f)
+        return SheetData([
+            OnDiskCellInfo(uuid=l['uuid'], code=l['code'])
+            for l in data
+        ])
+
+class SheetIface(metaclass=rpc.RpcMeta):
+    @rpc.rpcmethod(id=1)
+    def get_cells(self) -> Ref[List[RemoteCellInfo]]:
+        raise
+
+class Sheet(SheetIface):
+    def __init__(self, scope, cell_widget_types, sheet_data):
+        self.sheet_data = sheet_data
+        self.cell_widget_types = cell_widget_types
+        self.scope = scope
+
+    async def get_cells(self):
+        return reactive(lambda: [
+            self._make_remote_cell_info(uuid) for uuid in self.sheet_data.visible_cells.value
+        ])
+
+    def _make_remote_cell_info(self, uuid):
+        if uuid not in self.scope.cells:
+            return RemoteCellInfo(uuid=uuid,
+                                  code='',
+                                  cell_widget_type='loading',
+                                  widget_data=serialize.TypedPayload(value=None, type_=type(None)))
+
+        cell = self.scope.cells[uuid].value
+        cell_source = self.sheet_data.cells.value[uuid]
+
+        make_widget_data, _ = self.cell_widget_types[cell.cell_type]
+
+        return RemoteCellInfo(
+            uuid=uuid,
+            code=cell_source.value,
+            cell_widget_type=cell.cell_type,
+            widget_data=make_widget_data(cell),
+        )
+
+class Book:
+    def __init__(self, cell_types, cell_widget_types, root_dir):
+        self.root_dir = root_dir
+
+        self._sheet_data = VarRef({})
+        self.scope = BookScope(cell_types, self._cell_sources)
+        self.sheets = reactive_dict_map(
+            ref=self._sheet_data,
+            f=lambda sheet_data: Sheet(cell_widget_types=cell_widget_types, sheet_data=sheet_data, scope=self.scope))
+        self._load_sheets()
+
+    @reactive_property
+    def _cell_sources(self):
+        result = {}
+        for sheet_data in self._sheet_data.value.values():
+            result.update({ k: v.value for k, v in sheet_data.cells.value.items() })
+        return result
+
+    def _load_sheets(self):
+        sheets = {}
+        for fn in os.listdir(self.root_dir):
+            if fn.endswith('.sheet'):
+                name = fn.rsplit('.', 1)[0]
+                fn = self.root_dir + '/' + fn
+                sheets[name] = SheetData.load_from_file(fn)
+
+        self._sheet_data.value = sheets
