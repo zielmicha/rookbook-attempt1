@@ -56,7 +56,7 @@ def make_cell_description(cell_widget_types, cell_info: core.RemoteCellInfo) -> 
 
     return CellDescription(
         uuid=cell_info.uuid,
-        code_ref=reactive(lambda: cell_info.code),
+        code_ref=cell_info.code,
         rendered_widget=rendered_widget,
     )
 

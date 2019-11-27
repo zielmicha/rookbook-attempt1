@@ -67,7 +67,7 @@ OnDiskCellInfo = make_record('OnDiskCellInfo', [
 
 RemoteCellInfo = make_record('RemoteCellInfo', [
     field('uuid', id=1, type=str),
-    field('code', id=2, type=str),
+    field('code', id=2, type=Ref[str]),
     field('cell_widget_type', id=3, type=str),
     field('widget_data', id=4, type=serialize.AnyPayload),
 ])
@@ -104,20 +104,21 @@ class Sheet(SheetIface):
         ])
 
     def _make_remote_cell_info(self, uuid):
+        cell_source = self.sheet_data.cells.value[uuid]
+
         if uuid not in self.scope.cells:
             return RemoteCellInfo(uuid=uuid,
-                                  code='',
+                                  code=cell_source,
                                   cell_widget_type='loading',
                                   widget_data=serialize.TypedPayload(value=None, type_=type(None)))
 
         cell = self.scope.cells[uuid].value
-        cell_source = self.sheet_data.cells.value[uuid]
 
         make_widget_data, _ = self.cell_widget_types[cell.cell_type]
 
         return RemoteCellInfo(
             uuid=uuid,
-            code=cell_source.value,
+            code=cell_source,
             cell_widget_type=cell.cell_type,
             widget_data=make_widget_data(cell),
         )

@@ -70,6 +70,10 @@ class Ref(Generic[T]):
     def value(self):
         raise Exception('not supported')
 
+    @staticmethod
+    def _isinstance_plus(args, value, isinstance_plus):
+        return isinstance(value, _BaseRef)
+
 class _BaseRef:
     def __init__(self):
         self._rdepends = set()

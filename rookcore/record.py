@@ -84,6 +84,9 @@ def isinstance_plus(value, type_):
 
         return True
     elif origin is not None:
+        if hasattr(origin, '_isinstance_plus'):
+            return origin._isinstance_plus(type_.__args__, value, isinstance_plus)
+
         return True # TODO: somehow implement this?
 
     return isinstance(value, type_)
