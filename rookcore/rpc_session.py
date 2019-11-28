@@ -21,6 +21,10 @@ FinalizeResponse = make_record('FinalizeResponse', {
     field('id', int, id=1),
 })
 
+FinalizeRequest = make_record('FinalizeRequest', {
+    field('id', int, id=1),
+})
+
 AdjustRefCount = make_record('AdjustRefCount', {
     field('obj_id', int, id=1),
     field('delta', int, id=2),
@@ -30,7 +34,8 @@ RpcMessage = make_union({
     1: CallRequest,
     2: CallResponse,
     3: FinalizeResponse,
-    4: AdjustRefCount,
+    4: FinalizeRequest,
+    5: AdjustRefCount,
 })
 
 SerializedObject = make_record('SerializedObject', {
@@ -73,7 +78,8 @@ class RpcSession:
         self._next_own_object_id = 2
         self._remote_objects: weakref.WeakValueDictionary = weakref.WeakValueDictionary()
         self._next_call_id = 1
-        self._call_states = {}
+        self._call_callbacks = {}
+        self._call_increfs = {}
         self._response_states = {}
 
         o = _OwnObject(id=1, ref_count=1, obj=root_object)
@@ -105,22 +111,36 @@ class RpcSession:
         if isinstance(msg, CallRequest):
             obj = self._own_objects_by_id[msg.obj_id]
 
+            def finalize():
+                finalize_msg = FinalizeRequest(id=msg.id)
+                self._on_message(serialize.Serializer().serialize_to_memoryview(RpcMessage, finalize_msg))
+
+            serializer.finalize_msg = finalize
+
             self._run_call(obj, msg.method_id, msg.params, functools.partial(self._send_call_response, msg.id))
         elif isinstance(msg, CallResponse):
-            call_state = self._call_states[msg.id]
-
             def finalize():
                 finalize_msg = FinalizeResponse(id=msg.id)
                 self._on_message(serialize.Serializer().serialize_to_memoryview(RpcMessage, finalize_msg))
 
             serializer.finalize_msg = finalize
 
-            for own_object in call_state.ref_count_incremented: self._decref(own_object)
-            call_state.callback(msg.is_error, msg.value)
+            self._call_callbacks[msg.id](msg.is_error, msg.value)
+
+            del self._call_callbacks[msg.id]
         elif isinstance(msg, FinalizeResponse):
             for own_object in self._response_states[msg.id]:
+                print('decref', own_object.id)
                 self._decref(own_object)
+
+        elif isinstance(msg, FinalizeRequest):
+            for own_object in self._call_increfs[msg.id]:
+                self._decref(own_object)
+
+            del self._call_increfs[msg.id]
         elif isinstance(msg, AdjustRefCount):
+            print(self, 'ref', msg.obj_id, msg.delta)
+
             own_object = self._own_objects_by_id[msg.obj_id]
 
             if msg.delta == 1:
@@ -166,7 +186,8 @@ class RpcSession:
 
         serializer = _RpcSerializer(self)
         serialized = serializer.serialize_to_memoryview(RpcMessage, req)
-        self._call_states[call_id] = _CallState(callback=callback, ref_count_incremented=serializer.ref_count_incremented)
+        self._call_callbacks[call_id] = callback
+        self._call_increfs[call_id] = serializer.ref_count_incremented
         self._on_message(serialized)
 
     def call(self, obj_id, method_id, params, return_type):
@@ -187,11 +208,6 @@ class _OwnObject:
     id: int
     ref_count: int
     obj: Any
-
-@dataclasses.dataclass
-class _CallState:
-    ref_count_incremented: List[_OwnObject]
-    callback: Callable
 
 class _RemoteObject(rpc.RpcIface):
     def __init__(self, session, obj_id):
@@ -219,7 +235,7 @@ class _RpcSerializer(serialize.Serializer):
 
     def __del__(self):
         if self.finalize_msg is not None:
-            self.finalize_msg()
+            self.session.event_loop.call_soon_threadsafe(self.finalize_msg)
 
     def serialize(self, type_, value):
         if type(type_) == abc.ABCMeta and issubclass(type_, rpc.RpcIface):
@@ -261,6 +277,7 @@ class _RpcSerializer(serialize.Serializer):
         self.session._next_own_object_id += 1
         assert hasattr(obj, 'rpc_call'), obj
         own_object = _OwnObject(obj=obj, ref_count=1, id=id)
+        print(self.session, 'make', own_object, id)
         self.ref_count_incremented.append(own_object)
         self.session._own_objects_by_obj[obj] = own_object
         self.session._own_objects_by_id[id] = own_object
