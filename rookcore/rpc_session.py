@@ -100,7 +100,8 @@ class RpcSession:
         self._on_message(serialize.Serializer().serialize_to_memoryview(RpcMessage, msg))
 
     def message_received(self, data):
-        msg = _RpcSerializer(self).unserialize(RpcMessage, data)
+        serializer = _RpcSerializer(self)
+        msg = serializer.unserialize(RpcMessage, data)
         if isinstance(msg, CallRequest):
             obj = self._own_objects_by_id[msg.obj_id]
 
@@ -108,11 +109,14 @@ class RpcSession:
         elif isinstance(msg, CallResponse):
             call_state = self._call_states[msg.id]
 
+            def finalize():
+                finalize_msg = FinalizeResponse(id=msg.id)
+                self._on_message(serialize.Serializer().serialize_to_memoryview(RpcMessage, finalize_msg))
+
+            serializer.finalize_msg = finalize
+
             for own_object in call_state.ref_count_incremented: self._decref(own_object)
             call_state.callback(msg.is_error, msg.value)
-
-            finalize_msg = FinalizeResponse(id=msg.id)
-            self._on_message(serialize.Serializer().serialize_to_memoryview(RpcMessage, finalize_msg))
         elif isinstance(msg, FinalizeResponse):
             for own_object in self._response_states[msg.id]:
                 self._decref(own_object)
@@ -211,6 +215,11 @@ class _RpcSerializer(serialize.Serializer):
     def __init__(self, session):
         self.session = session
         self.ref_count_incremented = []
+        self.finalize_msg = None
+
+    def __del__(self):
+        if self.finalize_msg is not None:
+            self.finalize_msg()
 
     def serialize(self, type_, value):
         if type(type_) == abc.ABCMeta and issubclass(type_, rpc.RpcIface):

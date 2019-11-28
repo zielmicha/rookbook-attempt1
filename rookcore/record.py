@@ -100,6 +100,7 @@ def make_record(name, fields):
         dict[field.name] = property(operator.attrgetter('_F' + field.name))
 
     dict['_fields'] = fields
+    dict['__type'] = type
 
     for field in fields:
         dict[f'_T{field.name}'] = (lambda t: staticmethod(lambda value: value is None or isinstance_plus(value, t)))(field.type)
@@ -110,26 +111,29 @@ def make_record(name, fields):
     fields_str = ', '.join( f'{field.name}=_default_{field.name}' if field.default is not MISSING else field.name
                             for field in fields)
 
-    exec('def __init__(self, %s):\n  pass\n  %s' % (
+    def exec_(code, dict):
+        exec(compile(code, '<record %s>' % name, 'exec'), dict)
+
+    exec_('def __init__(self, %s):\n  pass\n  %s' % (
         '*, ' + fields_str if fields else '',
         '\n  '.join( f'if not self._T{field.name}({field.name}): raise TypeError("field {field.name} should have type {field.type}, but has value %r" % {field.name})\n  self._F{field.name} = {field.name}' for field in fields)), dict)
 
     if fields:
-        exec('def __hash__(self):\n  return hash((%s, ))' % (
+        exec_('def __hash__(self):\n  return hash((%s, ))' % (
             ', '.join( field.name for field in fields)), dict)
     else:
-        exec('def __hash__(self): return 0', dict)
+        exec_('def __hash__(self): return 0', dict)
 
-    exec('def __eq__(self, other):\n  return self is other or (type(self) == type(other) and %s)' % (
+    exec_('def __eq__(self, other):\n  return self is other or (__type(self) == __type(other) and %s)' % (
         ' and '.join( f'self.{field.name} == other.{field.name}' for field in fields )) if fields else 'True', dict)
 
-    exec('def __repr__(self):\n  return "%s(%s)" %% (%s)' % (
+    exec_('def __repr__(self):\n  return "%s(%s)" %% (%s)' % (
         name,
         ', '.join( '%s=%%r' % (field.name) for field in fields ),
         ', '.join( 'self.%s' % (field.name) for field in fields ),
     ), dict)
 
-    exec('def __str__(self): return repr(self)', dict)
+    exec_('def __str__(self): return repr(self)', dict)
 
     return type(name, (BaseRecord,), dict)
 
