@@ -238,7 +238,7 @@ class _RpcSerializer(serialize.Serializer):
         if isinstance(obj, _RemoteObject):
             if obj._session != self.session:
                 # we trivially could, by proxying the requests
-                raise Exception('cannot serilize third party remote objects')
+                raise Exception('cannot serialize third party remote objects')
 
             return SerializedObject(remote_id=obj._obj_id)
 
@@ -246,7 +246,7 @@ class _RpcSerializer(serialize.Serializer):
             own_object = self.session._own_objects_by_obj[obj]
             own_object.ref_count += 1
             self.ref_count_incremented.append(own_object)
-            return SerializedObject(own_id=id)
+            return SerializedObject(own_id=own_object.id)
 
         id = self.session._next_own_object_id
         self.session._next_own_object_id += 1

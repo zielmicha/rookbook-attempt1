@@ -2,8 +2,8 @@
 from .record import *
 from .serialize import *
 from .common import *
-from . import rpc, reactive, serialize, async_tools
-import functools, asyncio
+from . import rpc, reactive, serialize, async_tools, rpc_session
+import functools, asyncio, weakref
 
 RefValue = make_record('RefValue', [
     field(id=1, name="current_value", type=AnyPayload),
@@ -77,15 +77,27 @@ class ObservableImpl(ObservableIface):
 
         self.run_only_one.run(f)
 
+_observable_cache_per_session: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
 def serialize_ref(args, value, serializer):
     ref = value
     value_type, = args
     current_value = ref.value
+
+    assert isinstance(serializer, rpc_session._RpcSerializer)
+    session = serializer.session
+    observable_cache = _observable_cache_per_session.setdefault(session, weakref.WeakKeyDictionary())
+
+    observable = observable_cache.get(ref)
+    if observable is None:
+        observable = ObservableImpl(value_type, current_value, ref)
+        observable_cache[ref] = observable
+
     return serializer.serialize(
         type_=RefValue,
         value=RefValue(current_value=TypedPayload(type_=value_type, value=current_value),
                        is_writable=ref.is_writable,
-                       observable=ObservableImpl(value_type, current_value, ref)))
+                       observable=observable))
 
 class ObserverImpl(ObserverIface):
     def __init__(self, value_type, custom_ref):
@@ -96,10 +108,18 @@ class ObserverImpl(ObserverIface):
         self.custom_ref.change_value(value.unserialize(self.value_type))
         stabilise_later()
 
+_ref_cache: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+
 def unserialize_ref(args, value, serializer):
     value_type, = args
 
     ref_value = serializer.unserialize(type_=RefValue, value=value)
+
+    cache_key = ref_value.observable._rpc_remote_object
+    cached_return = _ref_cache.get(cache_key)
+    if cached_return is not None:
+        return cached_return
+
     current_value = ref_value.current_value.unserialize(value_type)
     remote_observable = ref_value.observable
 
@@ -121,7 +141,11 @@ def unserialize_ref(args, value, serializer):
         write_callback=write_callback if ref_value.is_writable else None,
         enable_callback=enable_callback,
         disable_callback=disable_callback,
+        # This is safe - morally, the references are created when the RPC system receives the
+        # call, we just do it lazily.
+        _allow_in_immutable_ctx=True
     )
+    _ref_cache[cache_key] = custom_ref
     return custom_ref
 
 serialize.GENERIC_SERIALIZERS[reactive.Ref] = serialize_ref

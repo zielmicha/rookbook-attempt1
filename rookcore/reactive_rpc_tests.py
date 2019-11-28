@@ -9,12 +9,18 @@ class HelloIface(metaclass=rpc.RpcMeta):
     @rpc.rpcmethod(id=1)
     def welcome(self) -> Ref[int]: raise
 
+    @rpc.rpcmethod(id=2)
+    def test_eq(self, a: Ref[str], b: Ref[str]) -> None: raise
+
 class HelloImpl(HelloIface):
     def __init__(self, ref1):
         self.ref1 = ref1
 
     async def welcome(self):
         return self.ref1
+
+    async def test_eq(self, a, b):
+        assert a is b, (a, b)
 
 class RpcTest(unittest.TestCase):
     def test_proxy(self):
@@ -53,6 +59,9 @@ class RpcTest(unittest.TestCase):
 
             assert ref1.value == 4
             assert ref1p.value == 4
+
+            r = VarRef("lo")
+            await iface.test_eq(a=r, b=r)
 
         asyncio.get_event_loop().run_until_complete(asyncio.wait_for(run(), 5))
 

@@ -129,13 +129,19 @@ class _BaseRef:
     def _refresh(self):
         pass
 
+    def map(self, f):
+        return reactive(lambda: f(self.value)) # type: ignore
+
 class CustomRef(_BaseRef):
-    def __init__(self, initial_value, write_callback, enable_callback, disable_callback):
+    def __init__(self, initial_value, write_callback, enable_callback, disable_callback,
+                 _allow_in_immutable_ctx=False):
         super().__init__()
         self._value = initial_value
         self._enable_callback = enable_callback
         self._disable_callback = disable_callback
         self._write_callback = write_callback
+        if not _allow_in_immutable_ctx:
+            assert not _get_thread_local().immutable_ctx
 
     def _enable(self):
         self._enable_callback()
@@ -223,7 +229,11 @@ def stabilise():
     queue = _OnceQueue()
     for x in _set_vars: queue.add(x._height, x, force=False)
 
+    counter = 0
+
     while queue:
+        counter += 1
+        if counter > 10000: raise Exception('too many stabilise iterations')
         item = queue.pop()
         old_value = item._value
         item._refresh()
