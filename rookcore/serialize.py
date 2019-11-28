@@ -160,3 +160,9 @@ class Serializer:
             return GENERIC_UNSERIALIZERS[getattr(type_, '__origin__')](type_.__args__, value, self)
 
         raise Exception('cannot unserialize %s (origin: %s)' % (type_, getattr(type_, '__origin__', None)))
+
+    def unserialize_from_bytes(self, type_, value):
+        if isinstance(value, bytes):
+            value = memoryview(value)
+
+        return self.unserialize(type_=type_, value=value)

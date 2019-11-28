@@ -8,6 +8,7 @@ import functools, asyncio
 RefValue = make_record('RefValue', [
     field(id=1, name="current_value", type=AnyPayload),
     field(id=2, name="observable", type=lazy(lambda: ObservableIface)),
+    field(id=3, name="is_writable", type=bool),
 ])
 
 stabilise_requested = False
@@ -83,6 +84,7 @@ def serialize_ref(args, value, serializer):
     return serializer.serialize(
         type_=RefValue,
         value=RefValue(current_value=TypedPayload(type_=value_type, value=current_value),
+                       is_writable=ref.is_writable,
                        observable=ObservableImpl(value_type, current_value, ref)))
 
 class ObserverImpl(ObserverIface):
@@ -116,7 +118,7 @@ def unserialize_ref(args, value, serializer):
 
     custom_ref = reactive.CustomRef(
         initial_value=current_value,
-        write_callback=write_callback,
+        write_callback=write_callback if ref_value.is_writable else None,
         enable_callback=enable_callback,
         disable_callback=disable_callback,
     )

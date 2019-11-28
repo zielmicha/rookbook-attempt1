@@ -152,8 +152,14 @@ class CustomRef(_BaseRef):
 
     @value.setter
     def value(self, x):
+        if self._write_callback == None:
+            raise Exception('reference is not writable')
         self.change_value(x)
         self._write_callback(x)
+
+    @property
+    def is_writable(self):
+        return self._write_callback != None
 
     def change_value(self, x):
         assert not _get_thread_local().immutable_ctx
@@ -252,6 +258,10 @@ class VarRef(_BaseRef):
         assert not _get_thread_local().immutable_ctx
         _set_vars[self] = x
 
+    @property
+    def is_writable(self):
+        return True
+
     def _refresh(self):
         if self in _set_vars:
             self._value = _set_vars[self]
@@ -280,6 +290,10 @@ class ReactiveRef(_BaseRef):
             raise self._exception
         else:
             return self._value
+
+    @property
+    def is_writable(self):
+        return False
 
     def __repr__(self):
         if self._exception:

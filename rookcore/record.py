@@ -3,7 +3,7 @@ from .common import *
 import operator
 import collections
 
-__all__ = ['make_record', 'field', 'make_union']
+__all__ = ['make_record', 'field', 'make_union', 'BaseRecord']
 
 class _Field(NamedTuple):
     name: str
