@@ -1,37 +1,33 @@
 from rookwidget.core import Widget, widget, h
 from rookcore import serialize, rpc
 from rookcore.record import *
+from rookcore.reactive import *
 from rookcore.common import *
 from . import base_cells
 
-ValCellValue = make_record('ValCellValue', [
-    field('name', id=1, type=str),
-    field('value_repr', id=2, type=str),
-])
-
-class ValCellWidget(Widget):
-    def init(self, value: serialize.AnyPayload):
-        self.value = value.unserialize(ValCellValue)
+class UnknownWidget(Widget):
+    def init(self, type_args, value):
+        self.repr = value.unserialize(Ref[str])
 
     def render(self):
-        return h('div', '%s = %s' % (self.value.name, self.value.value_repr))
+        return h('div', self.repr.value)
 
-def val_cell_widget_server(cell: base_cells.ValCell):
-    try:
-        value_repr = repr(cell.result.value)
-    except Exception as exc:
-        value_repr = 'error: ' + str(exc)
-
-    return serialize.TypedPayload(type_=ValCellValue,
-                                  value=ValCellValue(name=cell.name, value_repr=value_repr))
-
-class LoadingWidget(Widget):
-    def init(self, value): pass
+class StringWidget(Widget):
+    def init(self, type_args, value):
+        self.value = value.unserialize(Ref[str])
 
     def render(self):
-        return h('div', 'loading...')
+        return h('div', self.value.value)
+
+class ErrorWidget(Widget):
+    def init(self, type_args, value):
+        self.msg = value.unserialize(Ref[str])
+
+    def render(self):
+        return h('div', {'style': 'color: red'}, self.msg.value)
 
 cell_widget_types = frozendict({
-    'val': (val_cell_widget_server, ValCellWidget),
-    'loading': (None, LoadingWidget)
+    'string': StringWidget,
+    'error': ErrorWidget,
+    'unknown': UnknownWidget
 })

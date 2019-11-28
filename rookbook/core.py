@@ -65,11 +65,20 @@ OnDiskCellInfo = make_record('OnDiskCellInfo', [
     field('code', id=2, type=str),
 ])
 
+WidgetValueType = make_record('WidgetValueType', [
+    field('kind', id=1, type=str),
+    field('payload', id=2, type=serialize.AnyPayload, default=serialize.TypedPayload(value=None, type_=type(None))),
+])
+
+WidgetValue = make_record('WidgetValue', [
+    field('type', id=1, type=WidgetValueType),
+    field('value', id=2, type=serialize.AnyPayload),
+])
+
 RemoteCellInfo = make_record('RemoteCellInfo', [
     field('uuid', id=1, type=str),
     field('code', id=2, type=Ref[str]),
-    field('cell_widget_type', id=3, type=str),
-    field('widget_data', id=4, type=serialize.AnyPayload),
+    field('widget_value', id=3, type=WidgetValue),
 ])
 
 class SheetData:
@@ -93,9 +102,8 @@ class SheetIface(metaclass=rpc.RpcMeta):
         raise
 
 class Sheet(SheetIface):
-    def __init__(self, scope, cell_widget_types, sheet_data):
+    def __init__(self, scope, sheet_data):
         self.sheet_data = sheet_data
-        self.cell_widget_types = cell_widget_types
         self.scope = scope
 
     async def get_cells(self):
@@ -106,32 +114,29 @@ class Sheet(SheetIface):
     def _make_remote_cell_info(self, uuid):
         cell_source = self.sheet_data.cells.value[uuid]
 
-        if uuid not in self.scope.cells:
-            return RemoteCellInfo(uuid=uuid,
-                                  code=cell_source,
-                                  cell_widget_type='loading',
-                                  widget_data=serialize.TypedPayload(value=None, type_=type(None)))
-
-        cell = self.scope.cells[uuid].value
-
-        make_widget_data, _ = self.cell_widget_types[cell.cell_type]
+        if uuid in self.scope.cells:
+            cell = self.scope.cells[uuid].value
+            widget_value = cell.get_widget_value()
+        else:
+            widget_value = WidgetValue(
+                value=TypedPayload(value=None, type_=type(None)),
+                type=WidgetValueType(kind='none'))
 
         return RemoteCellInfo(
             uuid=uuid,
             code=cell_source,
-            cell_widget_type=cell.cell_type,
-            widget_data=make_widget_data(cell),
+            widget_value=widget_value,
         )
 
 class Book:
-    def __init__(self, cell_types, cell_widget_types, root_dir):
+    def __init__(self, cell_types, root_dir):
         self.root_dir = root_dir
 
         self._sheet_data = VarRef({})
         self.scope = BookScope(cell_types, self._cell_sources)
         self.sheets = reactive_dict_map(
             ref=self._sheet_data,
-            f=lambda sheet_data: Sheet(cell_widget_types=cell_widget_types, sheet_data=sheet_data, scope=self.scope))
+            f=lambda sheet_data: Sheet(sheet_data=sheet_data, scope=self.scope))
         self._load_sheets()
 
     @reactive_property

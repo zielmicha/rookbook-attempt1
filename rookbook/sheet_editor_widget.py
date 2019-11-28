@@ -44,14 +44,14 @@ class CellWidget(Widget):
         stabilise()
 
 def make_cell_description(cell_widget_types, cell_info: core.RemoteCellInfo) -> CellDescription:
-    print(cell_info)
-    _, widget_type = cell_widget_types[cell_info.cell_widget_type]
+    type = cell_info.widget_value.type
+    widget_type = cell_widget_types[type.kind]
 
     rendered_widget = WidgetDef(
         type_=widget_type,
         key='widget',
-        args=[cell_info.widget_data],
-        kwargs={},
+        args=[],
+        kwargs={'type_args': type.payload, 'value': cell_info.widget_value.value},
     )
 
     return CellDescription(

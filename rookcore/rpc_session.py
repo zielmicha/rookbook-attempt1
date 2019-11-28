@@ -130,7 +130,6 @@ class RpcSession:
             del self._call_callbacks[msg.id]
         elif isinstance(msg, FinalizeResponse):
             for own_object in self._response_states[msg.id]:
-                print('decref', own_object.id)
                 self._decref(own_object)
 
         elif isinstance(msg, FinalizeRequest):
@@ -139,8 +138,6 @@ class RpcSession:
 
             del self._call_increfs[msg.id]
         elif isinstance(msg, AdjustRefCount):
-            print(self, 'ref', msg.obj_id, msg.delta)
-
             own_object = self._own_objects_by_id[msg.obj_id]
 
             if msg.delta == 1:
@@ -277,7 +274,6 @@ class _RpcSerializer(serialize.Serializer):
         self.session._next_own_object_id += 1
         assert hasattr(obj, 'rpc_call'), obj
         own_object = _OwnObject(obj=obj, ref_count=1, id=id)
-        print(self.session, 'make', own_object, id)
         self.ref_count_incremented.append(own_object)
         self.session._own_objects_by_obj[obj] = own_object
         self.session._own_objects_by_id[id] = own_object

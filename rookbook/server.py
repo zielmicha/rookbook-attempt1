@@ -25,7 +25,6 @@ class MyHandler(web_server.Handler, ServerIface):
 
     def __init__(self, root_dir):
         self.book = core.Book(
-            cell_widget_types=base_widgets.cell_widget_types,
             cell_types=base_cells.cell_types, root_dir=root_dir)
 
         scope_obs = Observer(self.book.scope.require_all_values)
