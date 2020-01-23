@@ -143,6 +143,8 @@ class Serializer:
         x = self.serialize(type_, value)
         if isinstance(x, bytes):
             return memoryview(x)
+        elif isinstance(x, int):
+            return memoryview(serialize_io.write_uint(x))
         else:
             return memoryview(x.getvalue())
 
@@ -164,5 +166,10 @@ class Serializer:
     def unserialize_from_bytes(self, type_, value):
         if isinstance(value, bytes):
             value = memoryview(value)
+
+        if isinstance(value, memoryview) and isinstance(type_, (int, bool)):
+            length, value_n = serialize_io.read_uint(value)
+            if length != len(value): raise Exception('invalid value (too long)')
+            value = value_n
 
         return self.unserialize(type_=type_, value=value)

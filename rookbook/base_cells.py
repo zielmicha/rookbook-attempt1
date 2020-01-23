@@ -1,7 +1,7 @@
 from rookcore.common import *
 from rookcore.record import *
 from rookcore.reactive import *
-from rookcore import serialize
+from rookcore import serialize, persistent_ref
 from rookbook.core import WidgetValueType, WidgetValue
 
 class ValCell:
@@ -24,6 +24,28 @@ class ValCell:
 
     def get_widget_value(self):
         return get_widget_value(self.result)
+
+class VarCell:
+    @classmethod
+    def parse(cls, book, text):
+        name, type_code = text.split(':', 1)
+        name = name.strip()
+        type_code = type_code.strip()
+        return cls(book, name, type_code)
+
+    def __init__(self, book, name, type_code):
+        self.book = book
+        self.name = name
+        self.type_ = eval(type_code, {'__builtins__': __builtins__})
+        self.value = persistent_ref.make_file_based_ref(self.type_, book.storage.get_file_path('%s.var' % self.name))
+
+    def get_values(self):
+        return {
+            self.name: self.value
+        }
+
+    def get_widget_value(self):
+        return get_widget_value(self.value)
 
 def get_widget_value(ref):
     try:
@@ -49,5 +71,6 @@ def get_widget_value(ref):
             value=serialize.TypedPayload(type_=Ref[str], value=reactive(f)))
 
 cell_types = frozendict({
-    'val': ValCell
+    'val': ValCell,
+    'var': VarCell,
 })

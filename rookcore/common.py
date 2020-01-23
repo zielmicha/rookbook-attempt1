@@ -1,5 +1,6 @@
 from typing import *
 from dataclasses import dataclass
+import binascii, os
 
 class Lazy:
     def __init__(self, f):
@@ -40,6 +41,16 @@ def dict_multi(pairs):
 
 def _frozen_exc():
     raise Exception('attempting to modify frozen structure')
+
+def replace_file(path, data):
+    tmp_path = path + '.' + binascii.hexlify(os.urandom(5)).decode()
+    with open(tmp_path, 'wb') as f:
+        f.write(data)
+        f.flush()
+        # TODO: decide if we need fsync
+        # os.fsync(f.fileno())
+
+    os.rename(tmp_path, path)
 
 class frozenlist(list):
     def __setitem__(self, i, val):

@@ -3,10 +3,22 @@ from rookcore.common import *
 from rookcore.record import *
 from rookcore import rpc, serialize
 from typing import *
-import os, json
+import os, json, string
+
+allowed_file_name_letters = string.ascii_lowercase + string.ascii_uppercase + string.digits + '_.'
+
+class Storage:
+    root_dir: str
+
+    def get_file_path(self, name):
+        if not all( ch in allowed_file_name_letters for ch in name ):
+            raise ValueError('invalid file name %r' % name)
+
+        return os.path.join(self.root_dir, name)
 
 class BookScope:
-    def __init__(self, cell_types, cell_sources: Ref[Dict[str, str]]):
+    def __init__(self, storage, cell_types, cell_sources: Ref[Dict[str, str]]):
+        self.storage = storage
         self.cell_sources = cell_sources
         self._cell_sources = reactive_dict_map(f=lambda r: r, ref=cell_sources)
         self.cells = reactive_dict_map(f=self._eval_cell, ref=const_ref(self._cell_sources))
@@ -130,10 +142,11 @@ class Sheet(SheetIface):
 
 class Book:
     def __init__(self, cell_types, root_dir):
-        self.root_dir = root_dir
+        self.storage = Storage()
+        self.storage.root_dir = root_dir
 
         self._sheet_data = VarRef({})
-        self.scope = BookScope(cell_types, self._cell_sources)
+        self.scope = BookScope(self.storage, cell_types, self._cell_sources)
         self.sheets = reactive_dict_map(
             ref=self._sheet_data,
             f=lambda sheet_data: Sheet(sheet_data=sheet_data, scope=self.scope))
@@ -148,10 +161,10 @@ class Book:
 
     def _load_sheets(self):
         sheets = {}
-        for fn in os.listdir(self.root_dir):
+        for fn in os.listdir(self.storage.root_dir):
             if fn.endswith('.sheet'):
                 name = fn.rsplit('.', 1)[0]
-                fn = self.root_dir + '/' + fn
+                fn = self.storage.root_dir + '/' + fn
                 sheets[name] = SheetData.load_from_file(fn)
 
         self._sheet_data.value = sheets

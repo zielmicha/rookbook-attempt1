@@ -133,7 +133,7 @@ class _BaseRef:
         return reactive(lambda: f(self.value)) # type: ignore
 
 class CustomRef(_BaseRef):
-    def __init__(self, initial_value, write_callback, enable_callback, disable_callback,
+    def __init__(self, initial_value, write_callback, enable_callback=None, disable_callback=None,
                  _allow_in_immutable_ctx=False):
         super().__init__()
         self._value = initial_value
@@ -144,11 +144,13 @@ class CustomRef(_BaseRef):
             assert not _get_thread_local().immutable_ctx
 
     def _enable(self):
-        self._enable_callback()
+        if self._disable_callback is not None:
+            self._enable_callback()
         super()._enable()
 
     def _disable(self):
-        self._disable_callback()
+        if self._disable_callback is not None:
+            self._disable_callback()
         super()._disable()
 
     @property
@@ -161,6 +163,7 @@ class CustomRef(_BaseRef):
         if self._write_callback == None:
             raise Exception('reference is not writable')
         self.change_value(x)
+        # not ideal - we invoke callback even if value was not in fact changed
         self._write_callback(x)
 
     @property
@@ -176,7 +179,7 @@ class CustomRef(_BaseRef):
             self._value = _set_vars[self]
 
     def __repr__(self):
-        return 'CustomRef(%s)' % (self._value)
+        return 'CustomRef(%s, writable=%s)' % (self._value, self.is_writable)
 
 class _QueueItem:
     priority: int
